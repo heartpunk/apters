@@ -1,0 +1,20 @@
+#!/bin/sh
+set -e
+
+# Due to a git bug introduced in the 1.6.2.5 release, and fixed in commit
+# b1f47514f207b0601de7b0936cf13b3c0ae70081, this script requires git
+# version 1.7.2 or later.
+
+empty_tree=`git mktree </dev/null`
+
+export GIT_INDEX_FILE=tmp_index
+trap 'rm -f $GIT_INDEX_FILE' EXIT
+
+read tree
+git read-tree $tree
+while read tree
+do
+	git read-tree -i -m $empty_tree $tree
+done
+
+git write-tree
