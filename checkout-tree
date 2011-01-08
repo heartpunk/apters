@@ -1,8 +1,12 @@
 #!/bin/sh
 set -e
 
-export GIT_INDEX_FILE=tmp_index
+target="${2:-.}"
+mkdir -p "$target"
+
+# FIXME: use mktemp
+export GIT_INDEX_FILE="$GIT_DIR/checkout-tree-index"
 trap 'rm -f $GIT_INDEX_FILE' EXIT
 
 git read-tree $1
-git --work-tree=. checkout-index -f -a
+git checkout-index -f -a --prefix="$target/"
