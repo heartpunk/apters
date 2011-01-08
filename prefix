@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+
+prefix="$(echo $1 | tr '/' '\n' | tac)"
+shift
+
+for tree in "$@"
+do
+	for d in $prefix
+	do
+		tree=$(echo -e "040000 tree $tree\t$d" | git mktree)
+	done
+	echo $tree
+done
