@@ -11,6 +11,6 @@ trap 'sudo rm -rf "$tmpdir"' EXIT
 export GIT_INDEX_FILE="$tmpdir/index"
 
 ./checkout-tree $1 "$tmpdir/build"
-env --ignore-environment sudo chroot "$tmpdir/build" $2 </dev/null
+env --ignore-environment /usr/bin/sudo /usr/sbin/chroot "$tmpdir/build" $2 </dev/null
 git --work-tree="$tmpdir/build" add .
 git write-tree
