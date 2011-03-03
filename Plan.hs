@@ -1,6 +1,8 @@
 import Language
 
 import Data.List
+import System.Environment
+import System.IO.Unsafe
 
 -- The planning phase yields a Tree.
 
@@ -52,26 +54,25 @@ eval env (List exprs) = ListV $ map (eval env) exprs
 
 builtins :: Env
 builtins = [
-        ("import", binop doImport),
+        ("import", LambdaV $ onString "import" doImport),
         ("build", binop doBuild),
-        ("prefix", binop doPrefix),
-        ("extract", binop doExtract),
+        ("prefix", binop $ onString "prefix" doPrefix),
+        ("extract", binop $ onString "extract" doExtract),
         ("merge", LambdaV doMerge)
     ]
     where
     binop = (LambdaV .) (LambdaV .)
 
-    doImport tag path = error "import not implemented yet"
+    onString _ f (StringV s) = f s
+    onString caller _ v = badValue caller "string" v
 
     fetchTag _ (TreeV tree) = tree
     fetchTag _ (StringV tag) = Fetch tag
     fetchTag caller v = badValue ("fetch for " ++ caller) "tree or string" v
 
-    doPrefix (StringV path) tree = TreeV $ Prefix path $ fetchTag "prefix" tree
-    doPrefix v _ = badValue "prefix" "string" v
+    doPrefix path tree = TreeV $ Prefix path $ fetchTag "prefix" tree
 
-    doExtract (StringV path) tree = TreeV $ Extract path $ fetchTag "extract" tree
-    doExtract v _ = badValue "extract" "string" v
+    doExtract path tree = TreeV $ Extract path $ fetchTag "extract" tree
 
     doMerge (ListV []) = error "can't merge an empty list of trees"
     doMerge (ListV trees) = TreeV $ Merge $ map (fetchTag "merge") trees
@@ -80,6 +81,8 @@ builtins = [
     doBuild tree (StringV cmd) = TreeV $ Build (fetchTag "build" tree) cmd
     doBuild _ v = badValue "build command" "string" v
 
+doImport path = eval builtins $ parseExpr $ unsafePerformIO $ readFile path
+
 main = do
-    program <- getContents
-    print $ eval builtins $ parseExpr program
+    [path] <- getArgs
+    print $ doImport path
