@@ -2,19 +2,7 @@
 set -e
 
 if [ $# -lt 2 ]; then
-	echo "Usage: $0 <store> <recipe>" >&2
-	exit 1
-fi
-
-PATH="$(dirname $0):$PATH"
-
-export GIT_DIR="$1"
-hash=$(sha1sum "$2" | cut -f1 -d' ')
-git rev-parse --verify --quiet refs/tags/recipe-$hash >/dev/null && exit 0
-. "$2"
-
-if [ -z "$source" -o -z "$run" ]; then
-	echo "recipe $2 is missing 'source' or 'run' attributes" >&2
+	echo "Usage: $0 <tag> <builder>" >&2
 	exit 1
 fi
 
@@ -22,15 +10,7 @@ tmpdir="$(mktemp -d --tmpdir build.XXXXXXX)"
 trap 'sudo rm -rf "$tmpdir"' EXIT
 export GIT_INDEX_FILE="$tmpdir/index"
 
-checkout-tree $source "$tmpdir/build"
-env --ignore-environment sudo chroot "$tmpdir/build" $run </dev/null
-git --work-tree="$tmpdir/build/$extract" add .
-
-commit=$(
-	{
-		echo recipe $hash
-		echo
-		cat "$2"
-	} | git commit-tree `git write-tree`
-)
-git tag recipe-$hash $commit
+./checkout-tree $1 "$tmpdir/build"
+env --ignore-environment sudo chroot "$tmpdir/build" $2 </dev/null
+git --work-tree="$tmpdir/build" add .
+git write-tree

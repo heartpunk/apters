@@ -10,9 +10,10 @@ empty_tree=`git mktree </dev/null`
 export GIT_INDEX_FILE=tmp_index
 trap 'rm -f $GIT_INDEX_FILE' EXIT
 
-read tree
+tree=$1
+shift
 git read-tree $tree
-while read tree
+for tree in "$@"
 do
 	git read-tree -i -m $empty_tree $tree
 done
