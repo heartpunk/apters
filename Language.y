@@ -27,12 +27,12 @@ Exp : Exp0 { $1 }
 Exp0
     : Exp1 { $1 }
     | Exp0 Exp1 { Apply $1 $2 }
+    | Exp0 "=>" id { Member $1 $3 }
 
 Exp1
     : "{" sepEndBy(Bind, ",") "}" { Dictionary $2 }
     | "[" sepEndBy(Exp, ",") "]" { List $2 }
     | "(" Exp ")" { $2 }
-    | Exp1 "=>" id { Member $1 $3 }
     | id { Ident $1 }
 
 Bind : id Lambda { ($1, $2) }
