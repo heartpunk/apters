@@ -1,12 +1,13 @@
 import Language
+import Store
 
 import Data.List
 import System.Environment
-import System.IO.Unsafe
+import System.FilePath.Posix
 
 -- The planning phase yields a Tree.
 
-data Tree = Fetch String | Prefix String Tree | Extract String Tree | Merge [Tree] | Build Tree String
+data Tree = Fetch StoreTag | Prefix String Tree | Extract String Tree | Merge [Tree] | Build Tree String
     deriving Show
 
 type Env = [(String, Value)]
@@ -52,9 +53,9 @@ eval env (Member on field) = case eval env on of
     v -> badValue ("get member " ++ show field) "dictionary" v
 eval env (List exprs) = ListV $ map (eval env) exprs
 
-builtins :: Env
-builtins = [
-        ("import", LambdaV $ onString "import" doImport),
+builtins :: StoreTag -> String -> Env
+builtins basetag basepath = [
+        ("import", LambdaV $ onString "import" $ doImport basetag basepath),
         ("build", binop doBuild),
         ("prefix", binop $ onString "prefix" doPrefix),
         ("extract", binop $ onString "extract" doExtract),
@@ -67,7 +68,9 @@ builtins = [
     onString caller _ v = badValue caller "string" v
 
     fetchTag _ (TreeV tree) = tree
-    fetchTag _ (StringV tag) = Fetch tag
+    fetchTag _ (StringV tagstr) = case resolveTag tagstr of
+        Just tag -> Fetch tag
+        Nothing -> error $ "tag " ++ show tagstr ++ " not found"
     fetchTag caller v = badValue ("fetch for " ++ caller) "tree or string" v
 
     doPrefix path tree = TreeV $ Prefix path $ fetchTag "prefix" tree
@@ -81,8 +84,32 @@ builtins = [
     doBuild tree (StringV cmd) = TreeV $ Build (fetchTag "build" tree) cmd
     doBuild _ v = badValue "build command" "string" v
 
-doImport path = eval builtins $ parseExpr $ unsafePerformIO $ readFile path
+splitOnLast c l = case break (== c) l of
+    (a, _ : b) -> Just $ case splitOnLast c b of
+        Just (a', b') -> (a ++ c : a', b')
+        Nothing -> (a, b)
+    _ -> Nothing
+
+doImport basetag basepath spec = eval (builtins sourcetag sourcepath) $ parseExpr $ readTagFile sourcetag $ tail sourcepath
+    where
+    (sourcetag, sourcepath) = case splitOnLast ':' spec of
+        Just (tagstr, path@('/' : _)) -> case resolveTag tagstr of
+            Just tag -> (tag, path)
+            Nothing -> error $ "tag " ++ show tagstr ++ " not found"
+        Just _ -> error $ "tag specified without absolute path in " ++ show spec
+        Nothing -> (basetag, takeDirectory basepath </> spec)
+
+evalTree :: Tree -> StoreTag
+evalTree (Fetch tag) = tag
+evalTree (Prefix path tree) = prefixTag path $ evalTree tree
+evalTree (Extract path tree) = extractTag path $ evalTree tree
+evalTree (Merge trees) = mergeTags $ map evalTree trees
+evalTree (Build tree cmd) = buildTag (evalTree tree) cmd
 
 main = do
     [path] <- getArgs
-    print $ doImport path
+    let plan = doImport (error "recipe tag is required") (error "recipe path must be absolute") path
+    print plan
+    case plan of
+        TreeV tree -> print $ evalTree tree
+        _ -> return ()

@@ -1,4 +1,4 @@
-Plan: Scanner.hs Language.hs Plan.hs
+Plan: Scanner.hs Language.hs Store.hs Plan.hs
 	ghc --make -O3 Plan.hs
 
 %.hs: %.x
