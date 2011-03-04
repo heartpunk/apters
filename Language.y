@@ -8,7 +8,7 @@ import Scanner
 %token
     let { TokenLet }
     in { TokenIn }
-    "=>" { TokenDot }
+    "." { TokenDot }
     "=" { TokenEq }
     "{" { TokenOpenBrace }
     "}" { TokenCloseBrace }
@@ -28,7 +28,7 @@ Exp : Exp0 { $1 }
 Exp0
     : Exp1 { $1 }
     | Exp0 Exp1 { Apply $1 $2 }
-    | Exp0 "=>" id { Member $1 $3 }
+    | Exp0 "." id { Member $1 $3 }
 
 Exp1
     : "{" sepEndBy(Bind, ",") "}" { Dictionary $2 }
