@@ -8,7 +8,9 @@ module Store (
     StoreTag()
 ) where
 
+import Control.Monad
 import Data.Char
+import Network.URI (escapeURIString)
 import System.Exit
 import System.IO.Unsafe
 import System.Process
@@ -32,7 +34,13 @@ extractTag :: String -> StoreTag -> StoreTag
 extractTag path (StoreTag tag) = cause ("extract " ++ show path) $ resolveTag' $ tag ++ ":" ++ if last path == '/' then path else path ++ "/"
 
 resolveTag :: String -> Maybe StoreTag
-resolveTag tag = either (const Nothing) Just $ resolveTag' $ tag ++ "^{tree}"
+resolveTag tag = do
+    guard $ length tag < 64
+    let isCharOK c = isAlphaNum c || c `elem` ".+-:~_"
+    guard $ all isCharOK tag
+    let tag' = "store-" ++ escapeURIString (`notElem` ".:~") tag
+    Right tag'' <- return $ resolveTag' $ tag' ++ "^{tree}"
+    return tag''
 
 -- Internal helpers:
 
