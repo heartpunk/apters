@@ -9,7 +9,7 @@ tokens :-
     "#" .* ;
     "let" { const TokenLet }
     "in" { const TokenIn }
-    "." { const TokenArrow }
+    "." { const TokenDot }
     "=" { const TokenEq }
     "{" { const TokenOpenBrace }
     "}" { const TokenCloseBrace }
@@ -25,7 +25,7 @@ tokens :-
 data Token =
     TokenLet |
     TokenIn |
-    TokenArrow |
+    TokenDot |
     TokenEq |
     TokenOpenBrace |
     TokenCloseBrace |

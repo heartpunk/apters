@@ -8,7 +8,7 @@ import Scanner
 %token
     let { TokenLet }
     in { TokenIn }
-    "=>" { TokenArrow }
+    "=>" { TokenDot }
     "=" { TokenEq }
     "{" { TokenOpenBrace }
     "}" { TokenCloseBrace }
