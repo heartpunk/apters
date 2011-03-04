@@ -17,6 +17,7 @@ import Scanner
     "(" { TokenOpenParen }
     ")" { TokenCloseParen }
     "," { TokenSep }
+    string { TokenString $$ }
     id { TokenIdent $$ }
 
 %%
@@ -34,6 +35,7 @@ Exp1
     | "[" sepEndBy(Exp, ",") "]" { List $2 }
     | "(" Exp ")" { $2 }
     | id { Ident $1 }
+    | string { String $1 }
 
 Bind : id Lambda { ($1, $2) }
 
@@ -57,6 +59,7 @@ sepEndBy(p, sep)
 
 {
 data Expr =
+    String String |
     Ident String |
     Lambda String Expr |
     Apply Expr Expr |

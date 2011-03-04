@@ -9,7 +9,7 @@ tokens :-
     "#" .* ;
     "let" { const TokenLet }
     "in" { const TokenIn }
-    "=>" { const TokenArrow }
+    "." { const TokenArrow }
     "=" { const TokenEq }
     "{" { const TokenOpenBrace }
     "}" { const TokenCloseBrace }
@@ -18,7 +18,8 @@ tokens :-
     "(" { const TokenOpenParen }
     ")" { const TokenCloseParen }
     "," { const TokenSep }
-    [0-9A-Za-z_':\-\~\+\.\/]+ { TokenIdent }
+    \" [^\"]* \" { TokenString . init . tail }
+    [a-zA-Z_] [0-9a-zA-Z_]* { TokenIdent }
 
 {
 data Token =
@@ -33,6 +34,7 @@ data Token =
     TokenOpenParen |
     TokenCloseParen |
     TokenSep |
+    TokenString String |
     TokenIdent String
     deriving Show
 

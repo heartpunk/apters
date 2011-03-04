@@ -44,7 +44,7 @@ eval env (Apply lam arg) = case eval env lam of
 eval env (Let binds body) = let env' = [ (name, eval env' expr) | (name, expr) <- binds ] ++ env in eval env' body
 eval env (Ident name) = case lookup name env of
     Just value -> value
-    Nothing -> StringV name
+    Nothing -> error $ "no variable in scope named " ++ show name
 eval env (Dictionary binds) = let env' = [ (name, eval (env' ++ env) expr) | (name, expr) <- binds ] in DictionaryV env'
 eval env (Member on field) = case eval env on of
     DictionaryV dict -> case lookup field dict of
@@ -52,6 +52,7 @@ eval env (Member on field) = case eval env on of
         Nothing -> error $ "no field in dictionary named " ++ show field
     v -> badValue ("get member " ++ show field) "dictionary" v
 eval env (List exprs) = ListV $ map (eval env) exprs
+eval _ (String s) = StringV s
 
 builtins :: StoreTag -> String -> Env
 builtins basetag basepath = [
