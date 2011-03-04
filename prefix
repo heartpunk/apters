@@ -6,6 +6,7 @@ shift
 
 for tree in "$@"
 do
+	tree=$(git rev-parse "$tree^{tree}")
 	for d in $prefix
 	do
 		tree=$(echo -e "040000 tree $tree\t$d" | git mktree)
