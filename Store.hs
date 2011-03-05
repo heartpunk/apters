@@ -5,6 +5,7 @@ module Store (
     prefixTag,
     extractTag,
     resolveTag,
+    nameTag,
     StoreTag()
 ) where
 
@@ -34,15 +35,26 @@ extractTag :: String -> StoreTag -> StoreTag
 extractTag path (StoreTag tag) = cause ("extract " ++ show path) $ resolveTag' $ tag ++ ":" ++ if last path == '/' then path else path ++ "/"
 
 resolveTag :: String -> Maybe StoreTag
-resolveTag tag = do
-    guard $ length tag < 64
-    let isCharOK c = isAlphaNum c || c `elem` ".+-:~_"
-    guard $ all isCharOK tag
-    let tag' = "store-" ++ escapeURIString (`notElem` ".:~") tag
-    Right tag'' <- return $ resolveTag' $ tag' ++ "^{tree}"
-    return tag''
+resolveTag name = do
+    name' <- escapeTagName name
+    Right tag <- return $ resolveTag' $ name' ++ "^{tree}"
+    return tag
+
+nameTag :: String -> StoreTag -> IO Bool
+nameTag name (StoreTag tag) = case escapeTagName name of
+    Just name' -> do
+        (code, _out, _err) <- readProcessWithExitCode "git" ["tag", "-a", "-m", "", name', tag] ""
+        return $ code == ExitSuccess
+    Nothing -> return False
 
 -- Internal helpers:
+
+escapeTagName :: String -> Maybe String
+escapeTagName name = do
+    guard $ length name <= 64
+    let isCharOK c = isAlphaNum c || c `elem` ".+-:~_"
+    guard $ all isCharOK name
+    return $ "store-" ++ escapeURIString (`notElem` ".:~") name
 
 resolveTag' :: String -> Either String StoreTag
 resolveTag' tag = storeTag "git" ["rev-parse", "--verify", tag]
