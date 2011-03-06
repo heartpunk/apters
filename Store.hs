@@ -6,13 +6,17 @@ module Store (
     extractTag,
     resolveTag,
     nameTag,
+    StoreFile(..), importTag,
     StoreTag()
 ) where
 
+import Control.Exception
 import Control.Monad
+import qualified Data.ByteString.Lazy as B
 import Data.Char
 import Network.URI (escapeURIString)
 import System.Exit
+import System.IO
 import System.IO.Unsafe
 import System.Process
 
@@ -46,6 +50,36 @@ nameTag name (StoreTag tag) = case escapeTagName name of
         (code, _out, _err) <- readProcessWithExitCode "git" ["tag", "-a", "-m", "", name', tag] ""
         return $ code == ExitSuccess
     Nothing -> return False
+
+data StoreFile =
+    File { fileExecutable :: Bool, fileData :: B.ByteString } |
+    Symlink { targetPath :: FilePath } |
+    Hardlink { targetPath :: FilePath }
+
+importTag :: [(FilePath, StoreFile)] -> IO StoreTag
+importTag entries = do
+    let ref = "refs/import-tmp"
+    (Just stdin, Nothing, Nothing, p) <- createProcess (proc "git" ["fast-import", "--quiet", "--date-format=now"]) {
+        std_in = CreatePipe,
+        close_fds = True
+    }
+    hPutStr stdin $ unlines [
+            "commit " ++ ref,
+            "committer <apters@none> now",
+            "data 0"
+        ]
+    forM_ entries $ \ (path, storefile) -> case storefile of
+        File exec contents -> do
+            hPutStr stdin $ "M " ++ (if exec then "100755" else "100644") ++ " inline " ++ path ++ "\ndata " ++ show (B.length contents) ++ "\n"
+            B.hPutStr stdin contents
+            hPutStr stdin "\n"
+        Symlink target -> hPutStr stdin $ "M 120000 inline " ++ path ++ "\ndata " ++ show (length target) ++ "\n" ++ target ++ "\n"
+        Hardlink target -> hPutStr stdin $ "C " ++ target ++ " " ++ path ++ "\n"
+    hClose stdin
+    ExitSuccess <- waitForProcess p
+    Right tag <- evaluate $ resolveTag' $ ref ++ "^{tree}"
+    Right _ <- evaluate $ unsafeRun "git" ["update-ref", "-d", ref]
+    return tag
 
 -- Internal helpers:
 
