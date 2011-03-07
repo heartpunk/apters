@@ -15,5 +15,5 @@ mkdir "$GIT_WORK_TREE"
 git read-tree $1
 git checkout-index -f -a
 env --ignore-environment /usr/bin/sudo /usr/sbin/chroot "$GIT_WORK_TREE" $2 </dev/null
-git ls-files -dmoz | git update-index --add --remove -z --stdin
+git add -A -f .
 git write-tree
