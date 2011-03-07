@@ -9,8 +9,11 @@ fi
 tmpdir="$(mktemp -d --tmpdir build.XXXXXXX)"
 trap 'sudo rm -rf "$tmpdir"' EXIT
 export GIT_INDEX_FILE="$tmpdir/index"
+export GIT_WORK_TREE="$tmpdir/build"
 
-./checkout-tree $1 "$tmpdir/build"
-env --ignore-environment /usr/bin/sudo /usr/sbin/chroot "$tmpdir/build" $2 </dev/null
-git --work-tree="$tmpdir/build" add .
+mkdir "$GIT_WORK_TREE"
+git read-tree $1
+git checkout-index -f -a
+env --ignore-environment /usr/bin/sudo /usr/sbin/chroot "$GIT_WORK_TREE" $2 </dev/null
+git ls-files -dmoz | git update-index --add --remove -z --stdin
 git write-tree
