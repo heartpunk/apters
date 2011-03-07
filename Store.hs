@@ -10,15 +10,22 @@ module Store (
     StoreTag()
 ) where
 
+import Directory
+
+import Control.Concurrent
 import Control.Exception
 import Control.Monad
 import qualified Data.ByteString.Lazy as B
 import Data.Char
+import Data.List
 import Network.URI (escapeURIString)
+import System.Directory
+import System.Environment
 import System.Exit
 import System.FilePath.Posix
 import System.IO
 import System.IO.Unsafe
+import System.Posix.User
 import System.Process
 
 newtype StoreTag = StoreTag String deriving Show
@@ -31,7 +38,56 @@ mergeTags :: [StoreTag] -> StoreTag
 mergeTags tags = cause "merge" $ storeTag "./merge-trees" [ tag | StoreTag tag <- tags ]
 
 buildTag :: StoreTag -> String -> StoreTag
-buildTag (StoreTag root) cmd = cause "build" $ storeTag "./build" [root, cmd]
+buildTag (StoreTag root) cmd = unsafePerformIO $ withTemporaryDirectory "/tmp/apters-build" $ \ tmpdir -> do
+    let indexfile = tmpdir </> "index"
+    let worktree = tmpdir </> "build"
+    environ <- liftM ([("GIT_INDEX_FILE", indexfile), ("GIT_WORK_TREE", worktree)] ++) getEnvironment
+    let base cmd args = CreateProcess {
+            cmdspec = RawCommand cmd args,
+            cwd = Nothing,
+            env = Just environ,
+            std_in = CreatePipe,
+            std_out = CreatePipe,
+            std_err = CreatePipe,
+            close_fds = True
+        }
+    let expectSilence cmd args = do
+        (Just i, Just o, Just e, p) <- createProcess $ base cmd args
+        hClose i
+        o' <- hGetContents o
+        e' <- hGetContents e
+        all <- mergeIO o' e'
+        ex <- waitForProcess p
+        case (all, ex) of
+            ("", ExitSuccess) -> return ()
+            _ -> fail $ "running " ++ intercalate " " (cmd : args) ++ ": " ++ show ex ++ ": " ++ all
+
+    createDirectory worktree
+    expectSilence "git" ["read-tree", root]
+    expectSilence "git" ["checkout-index", "-f", "-a"]
+
+    uid <- getRealUserID
+    gid <- getRealGroupID
+    let chroot = ["/usr/sbin/chroot", "--userspec=" ++ show uid ++ ":" ++ show gid, worktree, cmd]
+    (Just i1, Nothing, Nothing, p1) <- createProcess (base "/usr/bin/sudo" chroot) {
+        env = Just [],
+        std_out = Inherit,
+        std_err = Inherit
+    }
+    hClose i1
+    ex1 <- waitForProcess p1
+    unless (ex1 == ExitSuccess) $ fail $ "running " ++ cmd ++ ": " ++ show ex1
+
+    expectSilence "git" ["add", "-A", "-f", "."]
+
+    (Just i2, Just o2, Just e2, p2) <- createProcess $ base "git" ["write-tree"]
+    hClose i2
+    o' <- hGetContents o2
+    e' <- hGetContents e2
+    ex <- waitForProcess p2
+    case (lines o', e', ex) of
+        ([l], "", ExitSuccess) | length l == 40 && all isHexDigit l -> return $ StoreTag l
+        _ -> fail $ "running git write-tree: " ++ show ex ++ ": " ++ o' ++ e'
 
 prefixTag :: String -> StoreTag -> StoreTag
 prefixTag path (StoreTag tag) = cause ("prefix " ++ show path) $ storeTag "./prefix" [path, tag]
