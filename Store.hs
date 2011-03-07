@@ -16,6 +16,7 @@ import qualified Data.ByteString.Lazy as B
 import Data.Char
 import Network.URI (escapeURIString)
 import System.Exit
+import System.FilePath.Posix
 import System.IO
 import System.IO.Unsafe
 import System.Process
@@ -68,7 +69,9 @@ importTag entries = do
             "committer <apters@none> now",
             "data 0"
         ]
-    forM_ entries $ \ (path, storefile) -> case storefile of
+    forM_ entries $ \ (rawpath, storefile) ->
+        let path = joinPath $ filter (\ d -> not (all (== '/') d || d == ".")) $ splitDirectories rawpath
+        in case storefile of
         File exec contents -> do
             hPutStr stdin $ "M " ++ (if exec then "100755" else "100644") ++ " inline " ++ path ++ "\ndata " ++ show (B.length contents) ++ "\n"
             B.hPutStr stdin contents
