@@ -22,7 +22,10 @@ importTar h = do
             Directory -> rest
             SymbolicLink target -> (path, Symlink $ fromLinkTargetToPosixPath target) : rest
             HardLink target -> (path, Hardlink $ fromLinkTargetToPosixPath target) : rest
-            _ -> error "unhandled tar entry type"
+            CharacterDevice _ _ -> error "can't import character devices"
+            BlockDevice _ _ -> error "can't import block devices"
+            NamedPipe -> error "can't import named pipes"
+            OtherEntryType typecode _ _ -> error $ "can't import tar entry type " ++ show typecode
     tag <- importTag $ Tar.foldEntries emit [] error $ Tar.read tarball
     return $ Just tag
 
