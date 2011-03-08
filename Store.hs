@@ -104,7 +104,9 @@ resolveTag name = do
 nameTag :: String -> StoreTag -> IO Bool
 nameTag name (StoreTag tag) = case escapeTagName name of
     Just name' -> do
-        (code, _out, _err) <- readProcessWithExitCode "git" ["tag", "-a", "-m", "", name', tag] ""
+        (Just i, Nothing, Nothing, p) <- createProcess (proc "git" ["tag", "-a", "-m", "", name', tag]) { std_in = CreatePipe }
+        hClose i
+        code <- waitForProcess p
         return $ code == ExitSuccess
     Nothing -> return False
 
