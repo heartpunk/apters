@@ -13,7 +13,6 @@ module Store (
 import Directory
 
 import Control.Concurrent
-import Control.Exception
 import Control.Monad
 import qualified Data.ByteString.Lazy as B
 import Data.Char
@@ -32,7 +31,7 @@ newtype StoreTag = StoreTag String deriving Show
 
 readTagFile :: StoreTag -> String -> String
 readTagFile (StoreTag tag) path = cause ("can't read path " ++ show path ++ " from store tag " ++ tag) $
-    unsafeRun "git" ["cat-file", "blob", tag ++ ":" ++ path]
+    run "git" ["cat-file", "blob", tag ++ ":" ++ path]
 
 mergeTags :: [StoreTag] -> StoreTag
 mergeTags tags = cause "merge" $ storeTag "./merge-trees" [ tag | StoreTag tag <- tags ]
@@ -98,7 +97,7 @@ extractTag path (StoreTag tag) = cause ("extract " ++ show path) $ resolveTag' $
 resolveTag :: String -> Maybe StoreTag
 resolveTag name = do
     name' <- escapeTagName name
-    Right tag <- return $ resolveTag' $ name' ++ "^{tree}"
+    Right tag <- return $ unsafePerformIO $ resolveTag' $ name' ++ "^{tree}"
     return tag
 
 nameTag :: String -> StoreTag -> IO Bool
@@ -138,8 +137,8 @@ importTag entries = do
         Hardlink target -> hPutStr stdin $ "C " ++ target ++ " " ++ path ++ "\n"
     hClose stdin
     ExitSuccess <- waitForProcess p
-    Right tag <- evaluate $ resolveTag' $ ref ++ "^{tree}"
-    Right _ <- evaluate $ unsafeRun "git" ["update-ref", "-d", ref]
+    Right tag <- resolveTag' $ ref ++ "^{tree}"
+    Right _ <- run "git" ["update-ref", "-d", ref]
     return tag
 
 -- Internal helpers:
@@ -151,22 +150,25 @@ escapeTagName name = do
     guard $ all isCharOK name
     return $ "store-" ++ escapeURIString (`notElem` ".:~") name
 
-resolveTag' :: String -> Either String StoreTag
+resolveTag' :: String -> IO (Either String StoreTag)
 resolveTag' tag = storeTag "git" ["rev-parse", "--verify", tag]
 
-storeTag :: String -> [String] -> Either String StoreTag
-storeTag cmd args = case unsafeRun cmd args of
-    Left err -> Left err
-    Right s -> case lines s of
-        [l] | length l == 40 && all isHexDigit l -> Right $ StoreTag l
-        _ -> Left "invalid tag returned from command"
+storeTag :: String -> [String] -> IO (Either String StoreTag)
+storeTag cmd args = do
+    status <- run cmd args
+    case status of
+        Left err -> return $ Left err
+        Right s -> case lines s of
+            [l] | length l == 40 && all isHexDigit l -> return $ Right $ StoreTag l
+            _ -> return $ Left "invalid tag returned from command"
 
-cause :: String -> Either String a -> a
-cause _ (Right a) = a
-cause what (Left why) = error $ what ++ ": " ++ why
+cause :: String -> IO (Either String a) -> a
+cause what act = case unsafePerformIO act of
+    Right a -> a
+    Left why -> error $ what ++ ": " ++ why
 
-unsafeRun :: String -> [String] -> Either String String
-unsafeRun cmd args = unsafePerformIO $ do
+run :: String -> [String] -> IO (Either String String)
+run cmd args = do
     (code, out, err) <- readProcessWithExitCode cmd args ""
     case (code, err) of
         (ExitSuccess, "") -> return $ Right out
