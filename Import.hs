@@ -15,6 +15,7 @@ import System.Process
 
 importTar :: Handle -> IO (Maybe StoreTag)
 importTar h = do
+    hSetBinaryMode h True
     tarball <- B.hGetContents h
     let emit entry rest = let path = fromTarPathToPosixPath $ entryTarPath entry in case entryContent entry of
             NormalFile bs _ -> (path, File ((entryPermissions entry .&. 0o111) /= 0) bs) : rest
