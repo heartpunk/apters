@@ -1,0 +1,27 @@
+Name:                apters
+Version:             0.1
+Synopsis:            Reproducible, maintainable build tools
+Author:              Jamey Sharp and Josh Triplett
+Maintainer:          Jamey Sharp <jamey@minilop.net>
+Stability:           Experimental
+Category:            System
+Build-type:          Simple
+Cabal-version:       >=1.2
+
+Executable apters
+  Main-is:             Plan.hs
+  Build-depends:
+    array,
+    base >= 4,
+    base < 5,
+    bytestring,
+    directory,
+    filepath,
+    network,
+    process,
+    random,
+    unix
+  Other-modules:
+    Language
+    Scanner
+  Build-tools:         alex, happy > 1.18.4

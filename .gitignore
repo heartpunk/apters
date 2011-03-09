@@ -1,5 +1,1 @@
-*.hi
-*.o
-Scanner.hs
-Language.hs
-Plan
+/dist/
