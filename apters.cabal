@@ -25,3 +25,9 @@ Executable apters
     Language
     Scanner
   Build-tools:         alex, happy > 1.18.4
+
+Library
+  Exposed-modules:
+    Codec.Archive.LibArchive.Internal
+    Codec.Archive.LibArchive.Internal.Entry
+  Build-tools:         c2hs
