@@ -35,6 +35,9 @@ enum ArchiveErrno {
 integralToEnum :: (Integral i, Enum e) => i -> e
 integralToEnum = toEnum . fromIntegral
 
+enumToIntegral :: (Integral i, Enum e) => e -> i
+enumToIntegral = fromIntegral . fromEnum
+
 withMaker :: IO a -> (a -> IO b) -> IO b
 withMaker = (>>=)
 
@@ -65,23 +68,23 @@ withSkipCallback f = withMaker $ makeSkipCallback'_ $ \ archive user len -> do
 
 foreign import ccall "wrapper" makeOpenCallback'_ :: {# type archive_open_callback #} -> IO (FunPtr {# type archive_open_callback #})
 
-type ArchiveOpenCallback a = Archive -> a -> IO CInt
+type ArchiveOpenCallback a = Archive -> a -> IO ArchiveErrno
 
 withOpenCallback :: ArchiveOpenCallback a -> (FunPtr {# type archive_open_callback #} -> IO b) -> IO b
 withOpenCallback f = withMaker $ makeOpenCallback'_ $ \ archive user -> do
     user' <- deRefStablePtr $ castPtrToStablePtr user
-    f archive user'
+    liftM enumToIntegral $ f archive user'
 
 foreign import ccall "wrapper" makeCloseCallback'_ :: {# type archive_close_callback #} -> IO (FunPtr {# type archive_close_callback #})
 
-type ArchiveCloseCallback a = Archive -> a -> IO CInt
+type ArchiveCloseCallback a = Archive -> a -> IO ArchiveErrno
 
 withCloseCallback :: ArchiveCloseCallback a -> (FunPtr {# type archive_close_callback #} -> IO b) -> IO b
 withCloseCallback f = withMaker $ makeCloseCallback'_ $ \ archive user -> do
     let stptr = castPtrToStablePtr user
     user' <- deRefStablePtr stptr
     freeStablePtr stptr
-    f archive user'
+    liftM enumToIntegral $ f archive user'
 
 #c
 typedef void archive_progress_callback(void *);
@@ -172,7 +175,7 @@ enum ArchiveFormat {
 {# fun archive_read_open2 as ^ {id `Archive', withUserPointer* `a', withOpenCallback* `ArchiveOpenCallback a', withReadCallback* `ArchiveReadCallback a', withSkipCallback* `ArchiveSkipCallback a', withCloseCallback* `ArchiveCloseCallback a'} -> `ArchiveErrno' integralToEnum #}
 
 {# fun archive_read_next_header as ^ {id `Archive', alloca- `ArchiveEntry' peek*} -> `ArchiveErrno' integralToEnum #}
--- TODO: support archive_read_next_header2 for re-using allocated ArchiveEntries
+{# fun archive_read_next_header2 as ^ {id `Archive', id `ArchiveEntry'} -> `ArchiveErrno' integralToEnum #}
 
 {# fun archive_read_header_position as ^ {id `Archive'} -> `Int64' fromIntegral #}
 
@@ -224,6 +227,6 @@ enum ArchiveExtract {
 {# fun unsafe archive_format_name as ^ {id `Archive'} -> `String' peekCAString* #}
 {# fun unsafe archive_format as ^ {id `Archive'} -> `ArchiveFormat' integralToEnum #}
 {# fun unsafe archive_clear_error as ^ {id `Archive'} -> `()' #}
--- TODO: archive_set_error
+-- TODO: archive_set_error ("Calling variadic functions is not supported by the FFI")
 {# fun unsafe archive_copy_error as ^ {id `Archive', id `Archive'} -> `()' #}
 {# fun unsafe archive_file_count as ^ {id `Archive'} -> `Int' fromIntegral #}

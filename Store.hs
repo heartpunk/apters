@@ -13,9 +13,12 @@ module Store (
 import Directory
 
 import Control.Concurrent
+import Control.Exception
 import Control.Monad
-import qualified Data.ByteString.Lazy as B
+import qualified Data.ByteString as B
 import Data.Char
+import Data.Int
+import Data.Iteratee (Iteratee, Stream(..), joinIM, liftI, idoneM, throwErr, mapChunksM_)
 import Data.List
 import Network.URI (escapeURIString)
 import System.Directory
@@ -110,12 +113,12 @@ nameTag name (StoreTag tag) = case escapeTagName name of
     Nothing -> return False
 
 data StoreFile =
-    File { fileExecutable :: Bool, fileData :: B.ByteString } |
+    File { fileExecutable :: Bool, fileSize :: Int64, fileData :: Iteratee B.ByteString IO () -> IO () } |
     Symlink { targetPath :: FilePath } |
     Hardlink { targetPath :: FilePath }
 
-importTag :: [(FilePath, StoreFile)] -> IO StoreTag
-importTag entries = do
+importTag :: Iteratee (FilePath, StoreFile) IO StoreTag
+importTag = joinIM $ do
     let ref = "refs/import-tmp"
     (Just stdin, Nothing, Nothing, p) <- createProcess (proc "git" ["fast-import", "--quiet", "--date-format=now"]) {
         std_in = CreatePipe,
@@ -126,22 +129,44 @@ importTag entries = do
             "committer <apters@none> now",
             "data 0"
         ]
-    forM_ entries $ \ (rawpath, storefile) ->
-        let path = joinPath $ filter (\ d -> not (all (== '/') d || d == ".")) $ splitDirectories rawpath
+    let cleanup maybeExc = do
+            hClose stdin
+            result <- waitForProcess p
+            tryTag <- resolveTag' $ ref ++ "^{tree}"
+            Right _ <- run "git" ["update-ref", "-d", ref]
+            case (maybeExc, result, tryTag) of
+                (Nothing, ExitSuccess, Right tag) -> return tag
+                (Just e, _, _) -> throw e
+                (_, ExitFailure _, _) -> fail $ "git fast-import: " ++ show result
+                (_, _, Left notag) -> fail $ "git fast-import: " ++ notag
+    let cleanPath rawpath = joinPath $ filter (\ d -> not (all (== '/') d || d == ".")) $ splitDirectories rawpath
+    return $ forI cleanup $ \ (rawpath, storefile) ->
+        let path = cleanPath rawpath
         in case storefile of
-        File exec contents -> do
-            hPutStr stdin $ "M " ++ (if exec then "100755" else "100644") ++ " inline " ++ path ++ "\ndata " ++ show (B.length contents) ++ "\n"
-            B.hPutStr stdin contents
+        File exec size contents -> do
+            hPutStr stdin $ "M " ++ (if exec then "100755" else "100644") ++ " inline " ++ path ++ "\ndata " ++ show size ++ "\n"
+            contents $ mapChunksM_ $ B.hPutStr stdin
             hPutStr stdin "\n"
         Symlink target -> hPutStr stdin $ "M 120000 inline " ++ path ++ "\ndata " ++ show (length target) ++ "\n" ++ target ++ "\n"
-        Hardlink target -> hPutStr stdin $ "C " ++ target ++ " " ++ path ++ "\n"
-    hClose stdin
-    ExitSuccess <- waitForProcess p
-    Right tag <- resolveTag' $ ref ++ "^{tree}"
-    Right _ <- run "git" ["update-ref", "-d", ref]
-    return tag
+        Hardlink target -> hPutStr stdin $ "C " ++ cleanPath target ++ " " ++ path ++ "\n"
 
 -- Internal helpers:
+
+forI :: (Maybe SomeException -> IO a) -> (b -> IO ()) -> Iteratee b IO a
+forI end act = go
+    where
+    go = liftI $ \ s -> case s of
+        EOF e -> stop e
+        Chunk b -> joinIM $ do
+            result <- try $ act b
+            case result of
+                Left e -> return $ stop $ Just e
+                Right () -> return go
+    stop maybeExc = joinIM $ do
+        result <- try $ end maybeExc
+        case result of
+            Left e -> return $ throwErr e
+            Right a -> idoneM a $ EOF Nothing
 
 escapeTagName :: String -> Maybe String
 escapeTagName name = do

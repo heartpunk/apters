@@ -28,6 +28,11 @@ Executable apters
 
 Library
   Exposed-modules:
+    Codec.Archive.LibArchive
     Codec.Archive.LibArchive.Internal
     Codec.Archive.LibArchive.Internal.Entry
+  Extra-libraries:
+    archive
+  Build-depends:
+    iteratee
   Build-tools:         c2hs

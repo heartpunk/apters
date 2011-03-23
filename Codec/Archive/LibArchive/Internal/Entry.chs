@@ -9,6 +9,7 @@ import Foreign.C
 
 #c
 enum ArchiveEntryType {
+    ArchiveEntryTypeNone = 0,
     ArchiveEntryTypeReg = AE_IFREG,
     ArchiveEntryTypeLink = AE_IFLNK,
     ArchiveEntryTypeSocket = AE_IFSOCK,
@@ -18,7 +19,7 @@ enum ArchiveEntryType {
     ArchiveEntryTypeFIFO = AE_IFIFO
 };
 #endc
-{# enum ArchiveEntryType {} deriving (Eq) #}
+{# enum ArchiveEntryType {} deriving (Eq, Show) #}
 
 {# fun unsafe archive_entry_clear as ^ {id `ArchiveEntry'} -> `()' #}
 {# fun unsafe archive_entry_clone as ^ {id `ArchiveEntry'} -> `ArchiveEntry' id #}
@@ -105,7 +106,7 @@ enum ArchiveEntryACL {
     ArchiveEntryACLRead = ARCHIVE_ENTRY_ACL_READ
 };
 #endc
-{# enum ArchiveEntryACL {} deriving (Eq) #}
+{# enum ArchiveEntryACL {} deriving (Eq, Show) #}
 
 #c
 enum ArchiveEntryACLType {
@@ -113,7 +114,7 @@ enum ArchiveEntryACLType {
     ArchiveEntryACLTypeDefault = ARCHIVE_ENTRY_ACL_TYPE_DEFAULT
 };
 #endc
-{# enum ArchiveEntryACLType {} deriving (Eq) #}
+{# enum ArchiveEntryACLType {} deriving (Eq, Show) #}
 
 #c
 enum ArchiveEntryACLTag {
@@ -125,13 +126,13 @@ enum ArchiveEntryACLTag {
     ArchiveEntryACLTagOther = ARCHIVE_ENTRY_ACL_OTHER
 };
 #endc
-{# enum ArchiveEntryACLTag {} deriving (Eq) #}
+{# enum ArchiveEntryACLTag {} deriving (Eq, Show) #}
 
 {# fun unsafe archive_entry_acl_clear as ^ {id `ArchiveEntry'} -> `()' #}
 {# fun unsafe archive_entry_acl_add_entry_w as ^ {id `ArchiveEntry', enumToIntegral `ArchiveEntryACLType', id `CInt', enumToIntegral `ArchiveEntryACLTag', id `CInt', withWideString* `String'} -> `()' #}
 
-{# fun unsafe archive_entry_acl_reset as ^ {id `ArchiveEntry', id `CInt'} -> `ArchiveErrno' integralToEnum #}
-{# fun unsafe archive_entry_acl_next_w as ^ {id `ArchiveEntry', id `CInt', alloca- `ArchiveEntryACLType' peekEnum*, alloca- `CInt' peek*, alloca- `ArchiveEntryACLTag' peekEnum*, alloca- `CInt' peek*, alloca- `String' wideStringPtr*} -> `ArchiveErrno' integralToEnum #}
+-- {# fun unsafe archive_entry_acl_reset as ^ {id `ArchiveEntry', id `CInt'} -> `ArchiveErrno' integralToEnum #}
+-- {# fun unsafe archive_entry_acl_next_w as ^ {id `ArchiveEntry', id `CInt', alloca- `ArchiveEntryACLType' peekEnum*, alloca- `CInt' peek*, alloca- `ArchiveEntryACLTag' peekEnum*, alloca- `CInt' peek*, alloca- `String' wideStringPtr*} -> `ArchiveErrno' integralToEnum #}
 
 #c
 enum ArchiveEntryACLStyle {
@@ -141,15 +142,12 @@ enum ArchiveEntryACLStyle {
     ArchiveEntryACLStyleMarkDefault = ARCHIVE_ENTRY_ACL_STYLE_MARK_DEFAULT
 };
 #endc
-{# enum ArchiveEntryACLStyle {} deriving (Eq) #}
+{# enum ArchiveEntryACLStyle {} deriving (Eq, Show) #}
 
 {# fun unsafe archive_entry_acl_text_w as ^ {id `ArchiveEntry', id `CInt'} -> `String' wideString* #}
 {# fun unsafe archive_entry_acl_count as ^ {id `ArchiveEntry', enumToIntegral `ArchiveEntryACLType'} -> `CInt' id #}
 
 -- TODO: implement archive_entry_xattr_* and linkresolver
-
-enumToIntegral :: (Integral i, Enum e) => e -> i
-enumToIntegral = fromIntegral . fromEnum
 
 peekEnum :: (Storable i, Integral i, Enum e) => Ptr i -> IO e
 peekEnum p = do
