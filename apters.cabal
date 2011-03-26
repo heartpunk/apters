@@ -24,6 +24,7 @@ Executable apters
   Other-modules:
     Language
     Scanner
+    DepsScanner
   Build-tools:         alex, happy > 1.18.4
 
 Library

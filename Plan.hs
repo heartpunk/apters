@@ -1,3 +1,4 @@
+import DepsScanner
 import Language
 import Store
 
@@ -17,7 +18,8 @@ data Value =
     DictionaryV Env |
     ListV [Value] |
     StringV String |
-    TreeV Tree -- used only by builtins
+    TreeV Tree | -- used only by builtins
+    DepV StoreTag -- used only by builtins
 
 instance Show Value where
     show (LambdaV {}) = "(lambda)"
@@ -25,6 +27,7 @@ instance Show Value where
     show (ListV values) = "[" ++ intercalate "," [ " " ++ show value | value <- values ] ++ " ]"
     show (StringV string) = show string
     show (TreeV tree) = show tree
+    show (DepV tag) = show tag
 
 valueType :: Value -> String
 valueType (LambdaV {}) = "lambda"
@@ -32,6 +35,7 @@ valueType (DictionaryV {}) = "dictionary"
 valueType (ListV {}) = "list"
 valueType (StringV {}) = "string"
 valueType (TreeV {}) = "tree"
+valueType (DepV {}) = "dependency"
 
 badValue :: String -> String -> Value -> a
 badValue op expected actual = error $ "can't " ++ op ++ " on a " ++ valueType actual ++ "; expected a " ++ expected
@@ -54,9 +58,12 @@ eval env (Member on field) = case eval env on of
 eval env (List exprs) = ListV $ map (eval env) exprs
 eval _ (String s) = StringV s
 
-builtins :: StoreTag -> String -> Env
-builtins basetag basepath = [
-        ("import", LambdaV $ onString "import" $ doImport basetag basepath),
+builtins :: StoreTag -> [(String, StoreTag)] -> String -> Env
+builtins basetag deps basepath = [
+        ("call", LambdaV $ onString "call" $ doCall basetag deps basepath),
+        ("import", LambdaV doImport),
+        ("deps", DictionaryV [ (key, DepV dep) | (key, dep) <- deps ]),
+        ("self", DepV basetag),
         ("build", binop doBuild),
         ("prefix", binop $ onString "prefix" doPrefix),
         ("extract", binop $ onString "extract" doExtract),
@@ -69,10 +76,8 @@ builtins basetag basepath = [
     onString caller _ v = badValue caller "string" v
 
     fetchTag _ (TreeV tree) = tree
-    fetchTag _ (StringV tagstr) = case resolveTag tagstr of
-        Just tag -> Fetch tag
-        Nothing -> error $ "tag " ++ show tagstr ++ " not found"
-    fetchTag caller v = badValue ("fetch for " ++ caller) "tree or string" v
+    fetchTag _ (DepV tag) = Fetch tag
+    fetchTag caller v = badValue ("fetch for " ++ caller) "tree or dependency" v
 
     doPrefix path tree = TreeV $ Prefix path $ fetchTag "prefix" tree
 
@@ -85,20 +90,15 @@ builtins basetag basepath = [
     doBuild tree (StringV cmd) = TreeV $ Build (fetchTag "build" tree) cmd
     doBuild _ v = badValue "build command" "string" v
 
-splitOnLast c l = case break (== c) l of
-    (a, _ : b) -> Just $ case splitOnLast c b of
-        Just (a', b') -> (a ++ c : a', b')
-        Nothing -> (a, b)
-    _ -> Nothing
+doEval tag deps sourcepath = eval (builtins tag deps sourcepath) $ parseExpr $ readTagFile tag $ tail sourcepath
 
-doImport basetag basepath spec = eval (builtins sourcetag sourcepath) $ parseExpr $ readTagFile sourcetag $ tail sourcepath
-    where
-    (sourcetag, sourcepath) = case splitOnLast ':' spec of
-        Just (tagstr, path@('/' : _)) -> case resolveTag tagstr of
-            Just tag -> (tag, path)
-            Nothing -> error $ "tag " ++ show tagstr ++ " not found"
-        Just _ -> error $ "tag specified without absolute path in " ++ show spec
-        Nothing -> (basetag, takeDirectory basepath </> spec)
+doCall tag deps basepath spec = doEval tag deps $ takeDirectory basepath </> spec
+
+doImport (DepV tag) = case mapM getDep $ getDeps $ readTagFile tag "apters.deps" of
+    Just deps -> doEval tag deps "/default.apters"
+    Nothing -> error $ "tag not found in apters.deps of " ++ show tag
+    where getDep (name, tagstr) = do tag <- resolveTag tagstr; return (name, tag)
+doImport v = badValue "import" "dependency" v
 
 evalTree :: Tree -> StoreTag
 evalTree (Fetch tag) = tag
@@ -109,7 +109,8 @@ evalTree (Build tree cmd) = buildTag (evalTree tree) cmd
 
 main = do
     [path] <- getArgs
-    let plan = doImport (error "recipe tag is required") (error "recipe path must be absolute") path
+    Just tag <- return $ resolveTag path
+    let plan = doImport (DepV tag)
     print plan
     case plan of
         TreeV tree -> print $ evalTree tree
