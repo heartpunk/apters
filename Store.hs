@@ -4,6 +4,7 @@ module Store (
     buildTag,
     prefixTag,
     extractTag,
+    escapeTagName,
     resolveTag,
     nameTag,
     StoreFile(..), importTag,
@@ -97,6 +98,13 @@ prefixTag path (StoreTag tag) = cause ("prefix " ++ show path) $ storeTag "./pre
 extractTag :: String -> StoreTag -> StoreTag
 extractTag path (StoreTag tag) = cause ("extract " ++ show path) $ resolveTag' $ tag ++ ":" ++ if last path == '/' then path else path ++ "/"
 
+escapeTagName :: String -> Maybe String
+escapeTagName name = do
+    guard $ length name <= 64
+    let isCharOK c = isAlphaNum c || c `elem` ".+-:~_"
+    guard $ all isCharOK name
+    return $ "store-" ++ escapeURIString (`notElem` ".:~") name
+
 resolveTag :: String -> Maybe StoreTag
 resolveTag name = do
     name' <- escapeTagName name
@@ -180,13 +188,6 @@ forI end act = go
         case result of
             Left e -> return $ throwErr e
             Right a -> idoneM a $ EOF Nothing
-
-escapeTagName :: String -> Maybe String
-escapeTagName name = do
-    guard $ length name <= 64
-    let isCharOK c = isAlphaNum c || c `elem` ".+-:~_"
-    guard $ all isCharOK name
-    return $ "store-" ++ escapeURIString (`notElem` ".:~") name
 
 resolveTag' :: String -> IO (Either String StoreTag)
 resolveTag' tag = storeTag "git" ["rev-parse", "--verify", tag]

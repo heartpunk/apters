@@ -6,12 +6,15 @@ import System.Environment
 import System.Exit
 import System.Process
 
+import Store
+
 clone :: [String] -> IO ()
 clone [tag] = clone [tag, tag]
 clone [tag, name] = do
     store <- readFile (".apters" </> "store")
     ExitSuccess <- rawSystem "git" ["init", name]
-    (Nothing, Nothing, Nothing, h) <- createProcess (proc "git" ["pull", store, "tag", tag]) { cwd = Just name }
+    let Just tag' = escapeTagName tag
+    (Nothing, Nothing, Nothing, h) <- createProcess (proc "git" ["pull", store, "tag", tag']) { cwd = Just name }
     ExitSuccess <- waitForProcess h
     return ()
 clone _ = putStrLn "Usage: apters clone <store tag> [<directory>]"
