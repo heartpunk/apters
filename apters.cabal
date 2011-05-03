@@ -35,6 +35,9 @@ Executable apters
     directory,
     filepath,
     process
+  Other-modules:
+    DepsScanner
+  Build-tools:         alex
 
 Library
   Exposed-modules:
