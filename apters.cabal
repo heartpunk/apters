@@ -8,7 +8,7 @@ Category:            System
 Build-type:          Simple
 Cabal-version:       >=1.2
 
-Executable apters
+Executable plan
   Main-is:             Plan.hs
   Build-depends:
     array,
@@ -27,6 +27,15 @@ Executable apters
     DepsScanner
   Build-tools:         alex, happy > 1.18.4
 
+Executable apters
+  Main-is:             Client.hs
+  Build-depends:
+    base >= 4,
+    base < 5,
+    directory,
+    filepath,
+    process
+
 Library
   Exposed-modules:
     Codec.Archive.LibArchive
@@ -35,5 +44,8 @@ Library
   Extra-libraries:
     archive
   Build-depends:
+    base >= 4,
+    base < 5,
+    bytestring,
     iteratee
   Build-tools:         c2hs
