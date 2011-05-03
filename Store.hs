@@ -106,10 +106,23 @@ resolveTag name = do
 nameTag :: String -> StoreTag -> IO Bool
 nameTag name (StoreTag tag) = case escapeTagName name of
     Just name' -> do
-        (Just i, Nothing, Nothing, p) <- createProcess (proc "git" ["tag", "-a", "-m", "", name', tag]) { std_in = CreatePipe }
-        hClose i
-        code <- waitForProcess p
-        return $ code == ExitSuccess
+        environ <- getEnvironment
+        (Just null1, Just hashpipe, Nothing, p1) <- createProcess (proc "git" ["commit-tree", tag]) { std_in = CreatePipe, std_out = CreatePipe, env = Just $ [
+            ("GIT_AUTHOR_NAME", "Apters"),
+            ("GIT_AUTHOR_EMAIL", "apters@example"),
+            ("GIT_AUTHOR_DATE", "1970-01-01 00:00:00 +0000"),
+            ("GIT_COMMITTER_NAME", "Apters"),
+            ("GIT_COMMITTER_EMAIL", "apters@example"),
+            ("GIT_COMMITTER_DATE", "1970-01-01 00:00:00 +0000")] ++ environ }
+        hClose null1
+        commit <- hGetLine hashpipe
+        hClose hashpipe
+        code1 <- waitForProcess p1
+        if code1 /= ExitSuccess then return False else do
+        (Just null2, Nothing, Nothing, p2) <- createProcess (proc "git" ["tag", "-a", "-m", "", name', commit]) { std_in = CreatePipe }
+        hClose null2
+        code2 <- waitForProcess p2
+        return $ code2 == ExitSuccess
     Nothing -> return False
 
 data StoreFile =
@@ -120,13 +133,13 @@ data StoreFile =
 importTag :: Iteratee (FilePath, StoreFile) IO StoreTag
 importTag = joinIM $ do
     let ref = "refs/import-tmp"
-    (Just stdin, Nothing, Nothing, p) <- createProcess (proc "git" ["fast-import", "--quiet", "--date-format=now"]) {
+    (Just stdin, Nothing, Nothing, p) <- createProcess (proc "git" ["fast-import", "--quiet", "--date-format=raw"]) {
         std_in = CreatePipe,
         close_fds = True
     }
     hPutStr stdin $ unlines [
             "commit " ++ ref,
-            "committer <apters@none> now",
+            "committer Apters <apters@example> 0 +0000",
             "data 0"
         ]
     let cleanup maybeExc = do
