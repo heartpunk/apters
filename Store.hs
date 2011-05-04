@@ -2,6 +2,7 @@ module Store (
     readTagFile,
     mergeTags,
     buildTag,
+    indexTag,
     prefixTag,
     extractTag,
     escapeTagName,
@@ -82,8 +83,20 @@ buildTag (StoreTag root) cmd = unsafePerformIO $ withTemporaryDirectory "/tmp/ap
     unless (ex1 == ExitSuccess) $ fail $ "running " ++ cmd ++ ": " ++ show ex1
 
     expectSilence "git" ["add", "-A", "-f", "."]
+    indexTag' $ Just environ
 
-    (Just i2, Just o2, Just e2, p2) <- createProcess $ base "git" ["write-tree"]
+indexTag :: IO StoreTag
+indexTag = indexTag' Nothing
+
+indexTag' :: Maybe [(String, String)] -> IO StoreTag
+indexTag' environ = do
+    (Just i2, Just o2, Just e2, p2) <- createProcess (proc "git" ["write-tree"]) {
+            env = environ,
+            std_in = CreatePipe,
+            std_out = CreatePipe,
+            std_err = CreatePipe,
+            close_fds = True
+        }
     hClose i2
     o' <- hGetContents o2
     e' <- hGetContents e2

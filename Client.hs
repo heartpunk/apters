@@ -24,6 +24,16 @@ clone [tag, name] = do
     return ()
 clone _ = putStrLn "Usage: apters clone <store tag> [<directory>]"
 
+commit :: [String] -> IO ()
+commit [tag] = do
+    store <- readFile (".." </> ".apters" </> "store")
+    True <- nameTag tag =<< indexTag
+    let Just tag' = escapeTagName tag
+    ExitSuccess <- rawSystem "git" ["push", store, "tag", tag']
+    -- TODO: Update the apters.deps file in repositories linked to this one
+    return ()
+commit _ = putStrLn "Usage: apters commit <store tag>"
+
 expand :: [String] -> IO ()
 expand [parent, depname, child] = do
     depsStr <- readFile $ parent </> "apters.deps"
@@ -52,6 +62,7 @@ help (cmd:_) = case lookup cmd cmds of
 
 cmds :: [(String, [String] -> IO ())]
 cmds = [("clone", clone),
+        ("commit", commit),
         ("expand", expand),
         ("workspace", workspace),
         ("help", help)]
