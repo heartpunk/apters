@@ -36,12 +36,12 @@ newtype StoreTag = StoreTag String deriving Show
 
 readTagFile :: StoreTag -> String -> String
 readTagFile (StoreTag tag) path = cause ("can't read path " ++ show path ++ " from store tag " ++ tag) $
-    run "git" ["cat-file", "blob", tag ++ ":" ++ path]
+    run "git" ["cat-file", "blob", tag ++ ":" ++ path] ""
 
 mergeTags :: [StoreTag] -> StoreTag
 mergeTags tags = unsafePerformIO $ withTemporaryDirectory "/tmp/apters-index" $ \ tmpdir -> do
     environ <- liftM (("GIT_INDEX_FILE", tmpdir </> "index") :) getEnvironment
-    Right (StoreTag empty) <- storeTag "git" ["mktree"]
+    Right (StoreTag empty) <- storeTag "git" ["mktree"] ""
     -- Due to a git bug introduced in the 1.6.2.5 release, and fixed in commit
     -- b1f47514f207b0601de7b0936cf13b3c0ae70081, this function requires git
     -- version 1.7.2 or later.
@@ -123,7 +123,13 @@ indexTag' environ = do
         _ -> fail $ "running git write-tree: " ++ show ex ++ ": " ++ o' ++ e'
 
 prefixTag :: String -> StoreTag -> StoreTag
-prefixTag path (StoreTag tag) = cause ("prefix " ++ show path) $ storeTag "./prefix" [path, tag]
+prefixTag path tag = cause ("prefix " ++ show path) $ foldM prefixOne (Right tag) $ reverse dirs
+    where
+    prefixOne (Right (StoreTag tree)) dir = storeTag "git" ["mktree"] $ "040000 tree " ++ tree ++ "\t" ++ dir ++ "\n"
+    prefixOne e _ = return e
+    dirs = case splitDirectories path of
+        ('/' : _) : rest -> rest
+        l -> l
 
 extractTag :: String -> StoreTag -> StoreTag
 extractTag path (StoreTag tag) = cause ("extract " ++ show path) $ resolveTag' $ tag ++ ":" ++ if last path == '/' then path else path ++ "/"
@@ -184,7 +190,7 @@ importTag = joinIM $ do
             hClose stdin
             result <- waitForProcess p
             tryTag <- resolveTag' $ ref ++ "^{tree}"
-            Right _ <- run "git" ["update-ref", "-d", ref]
+            Right _ <- run "git" ["update-ref", "-d", ref] ""
             case (maybeExc, result, tryTag) of
                 (Nothing, ExitSuccess, Right tag) -> return tag
                 (Just e, _, _) -> throw e
@@ -220,11 +226,11 @@ forI end act = go
             Right a -> idoneM a $ EOF Nothing
 
 resolveTag' :: String -> IO (Either String StoreTag)
-resolveTag' tag = storeTag "git" ["rev-parse", "--verify", tag]
+resolveTag' tag = storeTag "git" ["rev-parse", "--verify", tag] ""
 
-storeTag :: String -> [String] -> IO (Either String StoreTag)
-storeTag cmd args = do
-    status <- run cmd args
+storeTag :: String -> [String] -> String -> IO (Either String StoreTag)
+storeTag cmd args stdin = do
+    status <- run cmd args stdin
     case status of
         Left err -> return $ Left err
         Right s -> case lines s of
@@ -236,9 +242,9 @@ cause what act = case unsafePerformIO act of
     Right a -> a
     Left why -> error $ what ++ ": " ++ why
 
-run :: String -> [String] -> IO (Either String String)
-run cmd args = do
-    (code, out, err) <- readProcessWithExitCode cmd args ""
+run :: String -> [String] -> String -> IO (Either String String)
+run cmd args stdin = do
+    (code, out, err) <- readProcessWithExitCode cmd args stdin
     case (code, err) of
         (ExitSuccess, "") -> return $ Right out
         _ -> return $ Left err
