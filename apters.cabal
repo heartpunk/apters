@@ -8,8 +8,8 @@ Category:            System
 Build-type:          Simple
 Cabal-version:       >=1.2
 
-Executable plan
-  Main-is:             Plan.hs
+Executable apters
+  Main-is:             Client.hs
   Build-depends:
     array,
     base >= 4,
@@ -26,18 +26,6 @@ Executable plan
     Scanner
     DepsScanner
   Build-tools:         alex, happy > 1.18.4
-
-Executable apters
-  Main-is:             Client.hs
-  Build-depends:
-    base >= 4,
-    base < 5,
-    directory,
-    filepath,
-    process
-  Other-modules:
-    DepsScanner
-  Build-tools:         alex
 
 Library
   Exposed-modules:

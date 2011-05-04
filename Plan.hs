@@ -1,3 +1,5 @@
+module Plan (evalTag) where
+
 import DepsScanner
 import Language
 import Store
@@ -107,9 +109,9 @@ evalTree (Extract path tree) = extractTag path $ evalTree tree
 evalTree (Merge trees) = mergeTags $ map evalTree trees
 evalTree (Build tree cmd) = buildTag (evalTree tree) cmd
 
-main = do
-    [path] <- getArgs
-    Just tag <- return $ resolveTag path
+evalTag :: String -> IO ()
+evalTag name = do
+    Just tag <- return $ resolveTag name
     let plan = doImport (DepV tag)
     print plan
     case plan of

@@ -8,10 +8,19 @@ import System.FilePath
 import System.Environment
 import System.Exit
 import System.IO.Error
+import System.Posix.Env
 import System.Process
 
 import DepsScanner
+import Plan
 import Store
+
+build :: [String] -> IO ()
+build [tag] = do
+    store <- readFile (".apters" </> "store")
+    setEnv "GIT_DIR" store True
+    evalTag tag
+build _ = putStrLn "Usage: apters build <store tag>"
 
 clone :: [String] -> IO ()
 clone [tag] = clone [tag, tag]
@@ -64,7 +73,8 @@ help (cmd:_) = case lookup cmd cmds of
     Nothing -> putStrLn $ "apters: '" ++ cmd ++ "' is not an apters command. See 'apters help'."
 
 cmds :: [(String, [String] -> IO ())]
-cmds = [("clone", clone),
+cmds = [("build", build),
+        ("clone", clone),
         ("commit", commit),
         ("expand", expand),
         ("workspace", workspace),
