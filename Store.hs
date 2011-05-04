@@ -39,7 +39,24 @@ readTagFile (StoreTag tag) path = cause ("can't read path " ++ show path ++ " fr
     run "git" ["cat-file", "blob", tag ++ ":" ++ path]
 
 mergeTags :: [StoreTag] -> StoreTag
-mergeTags tags = cause "merge" $ storeTag "./merge-trees" [ tag | StoreTag tag <- tags ]
+mergeTags tags = unsafePerformIO $ withTemporaryDirectory "/tmp/apters-index" $ \ tmpdir -> do
+    environ <- liftM (("GIT_INDEX_FILE", tmpdir </> "index") :) getEnvironment
+    Right (StoreTag empty) <- storeTag "git" ["mktree"]
+    -- Due to a git bug introduced in the 1.6.2.5 release, and fixed in commit
+    -- b1f47514f207b0601de7b0936cf13b3c0ae70081, this function requires git
+    -- version 1.7.2 or later.
+    let readTree args = do
+            (Just null, Nothing, Nothing, p) <- createProcess (proc "git" ("read-tree" : args)) {
+                std_in = CreatePipe,
+                env = Just environ,
+                close_fds = True
+            }
+            hClose null
+            ExitSuccess <- waitForProcess p
+            return ()
+    readTree [empty]
+    forM_ tags $ \ (StoreTag tag) -> readTree ["-i", "-m", empty, tag]
+    indexTag' $ Just environ
 
 buildTag :: StoreTag -> String -> StoreTag
 buildTag (StoreTag root) cmd = unsafePerformIO $ withTemporaryDirectory "/tmp/apters-build" $ \ tmpdir -> do
