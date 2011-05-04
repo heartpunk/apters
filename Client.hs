@@ -30,8 +30,12 @@ commit [tag] = do
     True <- nameTag tag =<< indexTag
     let Just tag' = escapeTagName tag
     ExitSuccess <- rawSystem "git" ["push", store, "tag", tag']
-    -- TODO: Update the apters.deps file in repositories linked to this one
-    return ()
+    child <- liftM takeFileName getCurrentDirectory
+    setCurrentDirectory ".."
+    links <- liftM readLinks $ readFileOrEmpty $ ".apters" </> "links"
+    forM_ [(parent, dep) | (parent, dep, child') <- links, child == child'] $ \ (parent, dep) -> do
+        interactFile (parent </> "apters.deps") $ \ deps ->
+            showDeps $ (dep, tag) : [p | p@(dep', _) <- getDeps deps, dep /= dep']
 commit _ = putStrLn "Usage: apters commit <store tag>"
 
 expand :: [String] -> IO ()
@@ -39,9 +43,8 @@ expand [parent, depname, child] = do
     depsStr <- readFile $ parent </> "apters.deps"
     let Just dep = lookup depname (getDeps depsStr)
     clone [dep, child]
-    links <- readLinks
-    writeLinks $ (parent, depname, child) : [l | l@(parent', depname', _) <- links, parent /= parent', depname /= depname']
-    return ()
+    interactFile (".apters" </> "links") $ \ links ->
+        showLinks $ (parent, depname, child) : [l | l@(parent', depname', _) <- readLinks links, parent /= parent', depname /= depname']
 expand _ = putStrLn "Usage: apters expand <parent_dir> <dependency> <child_dir>"
 
 workspace :: [String] -> IO ()
@@ -67,9 +70,21 @@ cmds = [("clone", clone),
         ("workspace", workspace),
         ("help", help)]
 
-readLinks :: IO [(String, String, String)]
-readLinks = do
-    handleJust (guard . isDoesNotExistError) (const $ return []) $ liftM (take3s . split '\0') $ readFile $ ".apters" </> "links"
+readFileOrEmpty :: FilePath -> IO String
+readFileOrEmpty = handleJust (guard . isDoesNotExistError) (const $ return "") . readFile
+
+interactFile :: FilePath -> (String -> String) -> IO ()
+interactFile file f = do
+    let tmp = addExtension file "tmp"
+    old <- readFileOrEmpty file
+    writeFile tmp $ f old
+    renameFile tmp file
+
+showDeps :: [(String, String)] -> String
+showDeps deps = unlines [key ++ "=" ++ value | (key, value) <- sort deps ]
+
+readLinks :: String -> [(String, String, String)]
+readLinks = take3s . split '\0'
     where
     take3s :: [a] -> [(a, a, a)]
     take3s [] = []
@@ -79,10 +94,8 @@ readLinks = do
     split _ [] = []
     split x xs = case break (== x) xs of (v, xs') -> v : split x (drop 1 xs')
 
-writeLinks :: [(String, String, String)] -> IO ()
-writeLinks links = do
-    writeFile (".apters" </> "links.tmp") $ intercalate "\0" $ join3s links
-    renameFile (".apters" </> "links.tmp") (".apters" </> "links")
+showLinks :: [(String, String, String)] -> String
+showLinks = intercalate "\0" . join3s
     where
     join3s :: [(a, a, a)] -> [a]
     join3s [] = []
