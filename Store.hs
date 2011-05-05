@@ -148,10 +148,15 @@ instance (CacheKey a, CacheKey b) => CacheKey (a, b) where
     cacheKeyIdent (a, b) = cacheKeyIdent a ++ "-" ++ cacheKeyIdent b
 
 getCachedBuild :: CacheKey k => k -> IO (Maybe StoreTag)
-getCachedBuild _ = return Nothing
+getCachedBuild key = liftM (either (const Nothing) Just) $ resolveTag' $ "cache-" ++ cacheKeyIdent key ++ "^{tree}"
 
 putCachedBuild :: CacheKey k => k -> StoreTag -> IO ()
-putCachedBuild _ _ = return ()
+putCachedBuild key (StoreTag tag) = do
+    let ident = cacheKeyIdent key
+    (Just null, Nothing, Nothing, p) <- createProcess (proc "git" ["tag", "-a", "-m", "", "cache-" ++ ident, tag]) { std_in = CreatePipe }
+    hClose null
+    code <- waitForProcess p
+    when (code /= ExitSuccess) $ putStrLn $ "apters: warning: failed to cache build " ++ ident
 
 escapeTagName :: String -> Maybe String
 escapeTagName name = do
