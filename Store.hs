@@ -5,6 +5,9 @@ module Store (
     indexTag,
     prefixTag,
     extractTag,
+    CacheKey(..),
+    getCachedBuild,
+    putCachedBuild,
     escapeTagName,
     resolveTag,
     nameTag,
@@ -134,6 +137,21 @@ prefixTag path tag = cause ("prefix " ++ show path) $ foldM prefixOne (Right tag
 
 extractTag :: String -> StoreTag -> IO StoreTag
 extractTag path (StoreTag tag) = cause ("extract " ++ show path) $ resolveTag' $ tag ++ ":" ++ if last path == '/' then path else path ++ "/"
+
+class CacheKey a where
+    cacheKeyIdent :: a -> String
+
+instance CacheKey StoreTag where
+    cacheKeyIdent (StoreTag tag) = tag
+
+instance (CacheKey a, CacheKey b) => CacheKey (a, b) where
+    cacheKeyIdent (a, b) = cacheKeyIdent a ++ "-" ++ cacheKeyIdent b
+
+getCachedBuild :: CacheKey k => k -> IO (Maybe StoreTag)
+getCachedBuild _ = return Nothing
+
+putCachedBuild :: CacheKey k => k -> StoreTag -> IO ()
+putCachedBuild _ _ = return ()
 
 escapeTagName :: String -> Maybe String
 escapeTagName name = do

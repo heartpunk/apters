@@ -20,6 +20,7 @@ Executable apters
     network,
     process,
     random,
+    SHA,
     unix
   Other-modules:
     Language

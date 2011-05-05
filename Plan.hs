@@ -4,6 +4,8 @@ import DepsScanner
 import Language
 import Store
 
+import qualified Data.ByteString.Lazy.Char8 as C
+import Data.Digest.Pure.SHA
 import Data.List
 import System.Environment
 import System.FilePath.Posix
@@ -102,6 +104,9 @@ doImport (DepV tag) = case mapM getDep $ getDeps $ readTagFile tag "apters.deps"
     where getDep (name, tagstr) = do tag <- resolveTag tagstr; return (name, tag)
 doImport v = badValue "import" "dependency" v
 
+instance CacheKey C.ByteString where
+    cacheKeyIdent = showDigest . sha1
+
 evalTree :: Tree -> IO StoreTag
 evalTree (Fetch tag) = return tag
 evalTree (Prefix path tree) = prefixTag path =<< evalTree tree
@@ -109,7 +114,15 @@ evalTree (Extract path tree) = extractTag path =<< evalTree tree
 evalTree (Merge trees) = mergeTags =<< mapM evalTree trees
 evalTree (Build tree cmd) = do
     tag <- evalTree tree
-    buildTag tag cmd
+    let cacheKey = (tag, C.pack cmd)
+    maybeCached <- getCachedBuild cacheKey
+    case maybeCached of
+        Nothing -> do
+            tag' <- buildTag tag cmd
+            putCachedBuild cacheKey tag'
+            return tag'
+        Just tag' ->
+            return tag'
 
 evalTag :: String -> IO ()
 evalTag name = do
