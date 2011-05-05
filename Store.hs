@@ -35,11 +35,12 @@ import System.Process
 newtype StoreTag = StoreTag String deriving Show
 
 readTagFile :: StoreTag -> String -> String
-readTagFile (StoreTag tag) path = cause ("can't read path " ++ show path ++ " from store tag " ++ tag) $
+readTagFile (StoreTag tag) path = unsafePerformIO $
+    cause ("can't read path " ++ show path ++ " from store tag " ++ tag) $
     run "git" ["cat-file", "blob", tag ++ ":" ++ path] ""
 
-mergeTags :: [StoreTag] -> StoreTag
-mergeTags tags = unsafePerformIO $ withTemporaryDirectory "/tmp/apters-index" $ \ tmpdir -> do
+mergeTags :: [StoreTag] -> IO StoreTag
+mergeTags tags = withTemporaryDirectory "/tmp/apters-index" $ \ tmpdir -> do
     environ <- liftM (("GIT_INDEX_FILE", tmpdir </> "index") :) getEnvironment
     Right (StoreTag empty) <- storeTag "git" ["mktree"] ""
     -- Due to a git bug introduced in the 1.6.2.5 release, and fixed in commit
@@ -58,8 +59,8 @@ mergeTags tags = unsafePerformIO $ withTemporaryDirectory "/tmp/apters-index" $ 
     forM_ tags $ \ (StoreTag tag) -> readTree ["-i", "-m", empty, tag]
     indexTag' $ Just environ
 
-buildTag :: StoreTag -> String -> StoreTag
-buildTag (StoreTag root) cmd = unsafePerformIO $ withTemporaryDirectory "/tmp/apters-build" $ \ tmpdir -> do
+buildTag :: StoreTag -> String -> IO StoreTag
+buildTag (StoreTag root) cmd = withTemporaryDirectory "/tmp/apters-build" $ \ tmpdir -> do
     let indexfile = tmpdir </> "index"
     let worktree = tmpdir </> "build"
     environ <- liftM ([("GIT_INDEX_FILE", indexfile), ("GIT_WORK_TREE", worktree)] ++) getEnvironment
@@ -122,7 +123,7 @@ indexTag' environ = do
         ([l], "", ExitSuccess) | length l == 40 && all isHexDigit l -> return $ StoreTag l
         _ -> fail $ "running git write-tree: " ++ show ex ++ ": " ++ o' ++ e'
 
-prefixTag :: String -> StoreTag -> StoreTag
+prefixTag :: String -> StoreTag -> IO StoreTag
 prefixTag path tag = cause ("prefix " ++ show path) $ foldM prefixOne (Right tag) $ reverse dirs
     where
     prefixOne (Right (StoreTag tree)) dir = storeTag "git" ["mktree"] $ "040000 tree " ++ tree ++ "\t" ++ dir ++ "\n"
@@ -131,7 +132,7 @@ prefixTag path tag = cause ("prefix " ++ show path) $ foldM prefixOne (Right tag
         ('/' : _) : rest -> rest
         l -> l
 
-extractTag :: String -> StoreTag -> StoreTag
+extractTag :: String -> StoreTag -> IO StoreTag
 extractTag path (StoreTag tag) = cause ("extract " ++ show path) $ resolveTag' $ tag ++ ":" ++ if last path == '/' then path else path ++ "/"
 
 escapeTagName :: String -> Maybe String
@@ -237,10 +238,12 @@ storeTag cmd args stdin = do
             [l] | length l == 40 && all isHexDigit l -> return $ Right $ StoreTag l
             _ -> return $ Left "invalid tag returned from command"
 
-cause :: String -> IO (Either String a) -> a
-cause what act = case unsafePerformIO act of
-    Right a -> a
-    Left why -> error $ what ++ ": " ++ why
+cause :: String -> IO (Either String a) -> IO a
+cause what act = do
+    result <- act
+    case result of
+        Right a -> return a
+        Left why -> fail $ what ++ ": " ++ why
 
 run :: String -> [String] -> String -> IO (Either String String)
 run cmd args stdin = do

@@ -102,12 +102,14 @@ doImport (DepV tag) = case mapM getDep $ getDeps $ readTagFile tag "apters.deps"
     where getDep (name, tagstr) = do tag <- resolveTag tagstr; return (name, tag)
 doImport v = badValue "import" "dependency" v
 
-evalTree :: Tree -> StoreTag
-evalTree (Fetch tag) = tag
-evalTree (Prefix path tree) = prefixTag path $ evalTree tree
-evalTree (Extract path tree) = extractTag path $ evalTree tree
-evalTree (Merge trees) = mergeTags $ map evalTree trees
-evalTree (Build tree cmd) = buildTag (evalTree tree) cmd
+evalTree :: Tree -> IO StoreTag
+evalTree (Fetch tag) = return tag
+evalTree (Prefix path tree) = prefixTag path =<< evalTree tree
+evalTree (Extract path tree) = extractTag path =<< evalTree tree
+evalTree (Merge trees) = mergeTags =<< mapM evalTree trees
+evalTree (Build tree cmd) = do
+    tag <- evalTree tree
+    buildTag tag cmd
 
 evalTag :: String -> IO ()
 evalTag name = do
@@ -115,5 +117,5 @@ evalTag name = do
     let plan = doImport (DepV tag)
     print plan
     case plan of
-        TreeV tree -> print $ evalTree tree
+        TreeV tree -> print =<< evalTree tree
         _ -> return ()
