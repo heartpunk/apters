@@ -53,7 +53,7 @@ expand [parent, depname, child] = do
     let Just dep = lookup depname (getDeps depsStr)
     clone [dep, child]
     interactFile (".apters" </> "links") $ \ links ->
-        showLinks $ (parent, depname, child) : [l | l@(parent', depname', _) <- readLinks links, parent /= parent', depname /= depname']
+        showLinks $ (parent, depname, child) : [l | l@(parent', depname', _) <- readLinks links, not $ parent == parent' && depname == depname']
 expand _ = putStrLn "Usage: apters expand <parent_dir> <dependency> <child_dir>"
 
 workspace :: [String] -> IO ()
