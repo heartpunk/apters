@@ -2,7 +2,6 @@ module Store (
     readTagFile,
     mergeTags,
     buildTag,
-    indexTag,
     prefixTag,
     extractTag,
     CacheKey(..),
@@ -60,7 +59,7 @@ mergeTags tags = withTemporaryDirectory "/tmp/apters-index" $ \ tmpdir -> do
             return ()
     readTree [empty]
     forM_ tags $ \ (StoreTag tag) -> readTree ["-i", "-m", empty, tag]
-    indexTag' $ Just environ
+    indexTag' environ
 
 buildTag :: StoreTag -> String -> IO StoreTag
 buildTag (StoreTag root) cmd = withTemporaryDirectory "/tmp/apters-build" $ \ tmpdir -> do
@@ -104,15 +103,12 @@ buildTag (StoreTag root) cmd = withTemporaryDirectory "/tmp/apters-build" $ \ tm
     unless (ex1 == ExitSuccess) $ fail $ "running " ++ cmd ++ ": " ++ show ex1
 
     expectSilence "git" ["add", "-A", "-f", "."]
-    indexTag' $ Just environ
+    indexTag' environ
 
-indexTag :: IO StoreTag
-indexTag = indexTag' Nothing
-
-indexTag' :: Maybe [(String, String)] -> IO StoreTag
+indexTag' :: [(String, String)] -> IO StoreTag
 indexTag' environ = do
     (Just i2, Just o2, Just e2, p2) <- createProcess (proc "git" ["write-tree"]) {
-            env = environ,
+            env = Just environ,
             std_in = CreatePipe,
             std_out = CreatePipe,
             std_err = CreatePipe,
