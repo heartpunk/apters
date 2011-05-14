@@ -36,15 +36,15 @@ import System.Process
 
 newtype StoreTag = StoreTag String deriving Show
 
-readTagFile :: StoreTag -> String -> String
-readTagFile (StoreTag tag) path = unsafePerformIO $
+readTagFile :: String -> StoreTag -> String -> String
+readTagFile store (StoreTag tag) path = unsafePerformIO $
     cause ("can't read path " ++ show path ++ " from store tag " ++ tag) $
-    run "git" ["cat-file", "blob", tag ++ ":" ++ path] ""
+    run "git" ["--git-dir", store, "cat-file", "blob", tag ++ ":" ++ path] ""
 
-mergeTags :: [StoreTag] -> IO StoreTag
-mergeTags tags = withTemporaryDirectory "/tmp/apters-index" $ \ tmpdir -> do
-    environ <- liftM (("GIT_INDEX_FILE", tmpdir </> "index") :) getEnvironment
-    Right (StoreTag empty) <- storeTag "git" ["mktree"] ""
+mergeTags :: String -> [StoreTag] -> IO StoreTag
+mergeTags store tags = withTemporaryDirectory "/tmp/apters-index" $ \ tmpdir -> do
+    environ <- liftM ([("GIT_DIR", store), ("GIT_INDEX_FILE", tmpdir </> "index")] ++) getEnvironment
+    Right (StoreTag empty) <- storeTag "git" ["--git-dir", store, "mktree"] ""
     -- Due to a git bug introduced in the 1.6.2.5 release, and fixed in commit
     -- b1f47514f207b0601de7b0936cf13b3c0ae70081, this function requires git
     -- version 1.7.2 or later.
@@ -61,11 +61,11 @@ mergeTags tags = withTemporaryDirectory "/tmp/apters-index" $ \ tmpdir -> do
     forM_ tags $ \ (StoreTag tag) -> readTree ["-i", "-m", empty, tag]
     indexTag' environ
 
-buildTag :: StoreTag -> String -> IO StoreTag
-buildTag (StoreTag root) cmd = withTemporaryDirectory "/tmp/apters-build" $ \ tmpdir -> do
+buildTag :: String -> StoreTag -> String -> IO StoreTag
+buildTag store (StoreTag root) cmd = withTemporaryDirectory "/tmp/apters-build" $ \ tmpdir -> do
     let indexfile = tmpdir </> "index"
     let worktree = tmpdir </> "build"
-    environ <- liftM ([("GIT_INDEX_FILE", indexfile), ("GIT_WORK_TREE", worktree)] ++) getEnvironment
+    environ <- liftM ([("GIT_DIR", store), ("GIT_INDEX_FILE", indexfile), ("GIT_WORK_TREE", worktree)] ++) getEnvironment
     let base cmd args = CreateProcess {
             cmdspec = RawCommand cmd args,
             cwd = Nothing,
@@ -122,17 +122,17 @@ indexTag' environ = do
         ([l], "", ExitSuccess) | length l == 40 && all isHexDigit l -> return $ StoreTag l
         _ -> fail $ "running git write-tree: " ++ show ex ++ ": " ++ o' ++ e'
 
-prefixTag :: String -> StoreTag -> IO StoreTag
-prefixTag path tag = cause ("prefix " ++ show path) $ foldM prefixOne (Right tag) $ reverse dirs
+prefixTag :: String -> String -> StoreTag -> IO StoreTag
+prefixTag store path tag = cause ("prefix " ++ show path) $ foldM prefixOne (Right tag) $ reverse dirs
     where
-    prefixOne (Right (StoreTag tree)) dir = storeTag "git" ["mktree"] $ "040000 tree " ++ tree ++ "\t" ++ dir ++ "\n"
+    prefixOne (Right (StoreTag tree)) dir = storeTag "git" ["--git-dir", store, "mktree"] $ "040000 tree " ++ tree ++ "\t" ++ dir ++ "\n"
     prefixOne e _ = return e
     dirs = case splitDirectories path of
         ('/' : _) : rest -> rest
         l -> l
 
-extractTag :: String -> StoreTag -> IO StoreTag
-extractTag path (StoreTag tag) = cause ("extract " ++ show path) $ resolveTag' $ tag ++ ":" ++ if last path == '/' then path else path ++ "/"
+extractTag :: String -> String -> StoreTag -> IO StoreTag
+extractTag store path (StoreTag tag) = cause ("extract " ++ show path) $ resolveTag' store $ tag ++ ":" ++ if last path == '/' then path else path ++ "/"
 
 class CacheKey a where
     cacheKeyIdent :: a -> String
@@ -143,13 +143,13 @@ instance CacheKey StoreTag where
 instance (CacheKey a, CacheKey b) => CacheKey (a, b) where
     cacheKeyIdent (a, b) = cacheKeyIdent a ++ "-" ++ cacheKeyIdent b
 
-getCachedBuild :: CacheKey k => k -> IO (Maybe StoreTag)
-getCachedBuild key = liftM (either (const Nothing) Just) $ resolveTag' $ "cache-" ++ cacheKeyIdent key ++ "^{tree}"
+getCachedBuild :: CacheKey k => String -> k -> IO (Maybe StoreTag)
+getCachedBuild store key = liftM (either (const Nothing) Just) $ resolveTag' store $ "cache-" ++ cacheKeyIdent key ++ "^{tree}"
 
-putCachedBuild :: CacheKey k => k -> StoreTag -> IO ()
-putCachedBuild key (StoreTag tag) = do
+putCachedBuild :: CacheKey k => String -> k -> StoreTag -> IO ()
+putCachedBuild store key (StoreTag tag) = do
     let ident = cacheKeyIdent key
-    (Just null, Nothing, Nothing, p) <- createProcess (proc "git" ["tag", "-a", "-m", "", "cache-" ++ ident, tag]) { std_in = CreatePipe }
+    (Just null, Nothing, Nothing, p) <- createProcess (proc "git" ["--git-dir", store, "tag", "-a", "-m", "", "cache-" ++ ident, tag]) { std_in = CreatePipe }
     hClose null
     code <- waitForProcess p
     when (code /= ExitSuccess) $ putStrLn $ "apters: warning: failed to cache build " ++ ident
@@ -165,17 +165,17 @@ escapeTagName name = case stripPrefix "git/" name of
         guard $ all isCharOK name
         return $ "store-" ++ escapeURIString (`notElem` ".:~") name
 
-resolveTag :: String -> Maybe StoreTag
-resolveTag name = do
+resolveTag :: String -> String -> Maybe StoreTag
+resolveTag store name = do
     name' <- escapeTagName name
-    Right tag <- return $ unsafePerformIO $ resolveTag' $ name' ++ "^{tree}"
+    Right tag <- return $ unsafePerformIO $ resolveTag' store $ name' ++ "^{tree}"
     return tag
 
-nameTag :: String -> StoreTag -> IO Bool
-nameTag name (StoreTag tag) = case escapeTagName name of
+nameTag :: String -> String -> StoreTag -> IO Bool
+nameTag store name (StoreTag tag) = case escapeTagName name of
     Just name' -> do
         environ <- getEnvironment
-        (Just null1, Just hashpipe, Nothing, p1) <- createProcess (proc "git" ["commit-tree", tag]) { std_in = CreatePipe, std_out = CreatePipe, env = Just $ [
+        (Just null1, Just hashpipe, Nothing, p1) <- createProcess (proc "git" ["--git-dir", store, "commit-tree", tag]) { std_in = CreatePipe, std_out = CreatePipe, env = Just $ [
             ("GIT_AUTHOR_NAME", "Apters"),
             ("GIT_AUTHOR_EMAIL", "apters@example"),
             ("GIT_AUTHOR_DATE", "1970-01-01 00:00:00 +0000"),
@@ -187,7 +187,7 @@ nameTag name (StoreTag tag) = case escapeTagName name of
         hClose hashpipe
         code1 <- waitForProcess p1
         if code1 /= ExitSuccess then return False else do
-        (Just null2, Nothing, Nothing, p2) <- createProcess (proc "git" ["tag", "-a", "-m", "", name', commit]) { std_in = CreatePipe }
+        (Just null2, Nothing, Nothing, p2) <- createProcess (proc "git" ["--git-dir", store, "tag", "-a", "-m", "", name', commit]) { std_in = CreatePipe }
         hClose null2
         code2 <- waitForProcess p2
         return $ code2 == ExitSuccess
@@ -198,10 +198,10 @@ data StoreFile =
     Symlink { targetPath :: FilePath } |
     Hardlink { targetPath :: FilePath }
 
-importTag :: Iteratee (FilePath, StoreFile) IO StoreTag
-importTag = joinIM $ do
+importTag :: String -> Iteratee (FilePath, StoreFile) IO StoreTag
+importTag store = joinIM $ do
     let ref = "refs/import-tmp"
-    (Just stdin, Nothing, Nothing, p) <- createProcess (proc "git" ["fast-import", "--quiet", "--date-format=raw"]) {
+    (Just stdin, Nothing, Nothing, p) <- createProcess (proc "git" ["--git-dir", store, "fast-import", "--quiet", "--date-format=raw"]) {
         std_in = CreatePipe,
         close_fds = True
     }
@@ -213,8 +213,8 @@ importTag = joinIM $ do
     let cleanup maybeExc = do
             hClose stdin
             result <- waitForProcess p
-            tryTag <- resolveTag' $ ref ++ "^{tree}"
-            Right _ <- run "git" ["update-ref", "-d", ref] ""
+            tryTag <- resolveTag' store $ ref ++ "^{tree}"
+            Right _ <- run "git" ["--git-dir", store, "update-ref", "-d", ref] ""
             case (maybeExc, result, tryTag) of
                 (Nothing, ExitSuccess, Right tag) -> return tag
                 (Just e, _, _) -> throw e
@@ -249,8 +249,8 @@ forI end act = go
             Left e -> return $ throwErr e
             Right a -> idoneM a $ EOF Nothing
 
-resolveTag' :: String -> IO (Either String StoreTag)
-resolveTag' tag = storeTag "git" ["rev-parse", "--verify", tag] ""
+resolveTag' :: String -> String -> IO (Either String StoreTag)
+resolveTag' store tag = storeTag "git" ["--git-dir", store, "rev-parse", "--verify", tag] ""
 
 storeTag :: String -> [String] -> String -> IO (Either String StoreTag)
 storeTag cmd args stdin = do

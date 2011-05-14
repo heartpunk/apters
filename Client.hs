@@ -18,8 +18,7 @@ import Store
 build :: [String] -> IO ()
 build [tag] = do
     store <- readFile (".apters" </> "store")
-    setEnv "GIT_DIR" store True
-    evalTag tag
+    evalTag store tag
 build _ = putStrLn "Usage: apters build <store tag>"
 
 clone :: [String] -> IO ()

@@ -62,10 +62,10 @@ eval env (Member on field) = case eval env on of
 eval env (List exprs) = ListV $ map (eval env) exprs
 eval _ (String s) = StringV s
 
-builtins :: StoreTag -> [(String, StoreTag)] -> String -> Env
-builtins basetag deps basepath = [
-        ("call", LambdaV $ onString "call" $ doCall basetag deps basepath),
-        ("import", LambdaV doImport),
+builtins :: String -> StoreTag -> [(String, StoreTag)] -> String -> Env
+builtins store basetag deps basepath = [
+        ("call", LambdaV $ onString "call" $ doCall store basetag deps basepath),
+        ("import", LambdaV $ doImport store),
         ("deps", DictionaryV [ (key, DepV dep) | (key, dep) <- deps ]),
         ("self", DepV basetag),
         ("build", binop doBuild),
@@ -94,41 +94,44 @@ builtins basetag deps basepath = [
     doBuild tree (StringV cmd) = TreeV $ Build (fetchTag "build" tree) cmd
     doBuild _ v = badValue "build command" "string" v
 
-doEval tag deps sourcepath = eval (builtins tag deps sourcepath) $ parseExpr $ readTagFile tag $ tail sourcepath
+doEval :: String -> StoreTag -> [(String, StoreTag)] -> String -> Value
+doEval store tag deps sourcepath = eval (builtins store tag deps sourcepath) $ parseExpr $ readTagFile store tag $ tail sourcepath
 
-doCall tag deps basepath spec = doEval tag deps $ takeDirectory basepath </> spec
+doCall :: String -> StoreTag -> [(String, StoreTag)] -> String -> String -> Value
+doCall store tag deps basepath spec = doEval store tag deps $ takeDirectory basepath </> spec
 
-doImport (DepV tag) = case mapM getDep $ getDeps $ readTagFile tag "apters.deps" of
-    Just deps -> doEval tag deps "/default.apters"
+doImport :: String -> Value -> Value
+doImport store (DepV tag) = case mapM getDep $ getDeps $ readTagFile store tag "apters.deps" of
+    Just deps -> doEval store tag deps "/default.apters"
     Nothing -> error $ "tag not found in apters.deps of " ++ show tag
-    where getDep (name, tagstr) = do tag <- resolveTag tagstr; return (name, tag)
-doImport v = badValue "import" "dependency" v
+    where getDep (name, tagstr) = do tag <- resolveTag store tagstr; return (name, tag)
+doImport _ v = badValue "import" "dependency" v
 
 instance CacheKey C.ByteString where
     cacheKeyIdent = showDigest . sha1
 
-evalTree :: Tree -> IO StoreTag
-evalTree (Fetch tag) = return tag
-evalTree (Prefix path tree) = prefixTag path =<< evalTree tree
-evalTree (Extract path tree) = extractTag path =<< evalTree tree
-evalTree (Merge trees) = mergeTags =<< mapM evalTree trees
-evalTree (Build tree cmd) = do
-    tag <- evalTree tree
+evalTree :: String -> Tree -> IO StoreTag
+evalTree _ (Fetch tag) = return tag
+evalTree store (Prefix path tree) = prefixTag store path =<< evalTree store tree
+evalTree store (Extract path tree) = extractTag store path =<< evalTree store tree
+evalTree store (Merge trees) = mergeTags store =<< mapM (evalTree store) trees
+evalTree store (Build tree cmd) = do
+    tag <- evalTree store tree
     let cacheKey = (tag, C.pack cmd)
-    maybeCached <- getCachedBuild cacheKey
+    maybeCached <- getCachedBuild store cacheKey
     case maybeCached of
         Nothing -> do
-            tag' <- buildTag tag cmd
-            putCachedBuild cacheKey tag'
+            tag' <- buildTag store tag cmd
+            putCachedBuild store cacheKey tag'
             return tag'
         Just tag' ->
             return tag'
 
-evalTag :: String -> IO ()
-evalTag name = do
-    Just tag <- return $ resolveTag name
-    let plan = doImport (DepV tag)
+evalTag :: String -> String -> IO ()
+evalTag store name = do
+    Just tag <- return $ resolveTag store name
+    let plan = doImport store (DepV tag)
     print plan
     case plan of
-        TreeV tree -> print =<< evalTree tree
+        TreeV tree -> print =<< evalTree store tree
         _ -> return ()
