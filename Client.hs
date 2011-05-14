@@ -41,7 +41,7 @@ commit [] = do
     links <- liftM readLinks $ readFileOrEmpty $ ".." </> ".apters" </> "links"
     forM_ [(parent, dep) | (parent, dep, child') <- links, child == child'] $ \ (parent, dep) -> do
         interactFile (".." </> parent </> "apters.deps") $ \ deps ->
-            showDeps $ (dep, "git/" ++ tag) : [p | p@(dep', _) <- getDeps deps, dep /= dep]
+            showDeps $ (dep, "git/" ++ tag) : [p | p@(dep', _) <- getDeps deps, dep /= dep']
 commit _ = putStrLn "Usage: apters commit"
 
 expand :: [String] -> IO ()
