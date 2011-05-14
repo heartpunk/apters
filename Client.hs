@@ -26,26 +26,23 @@ clone :: [String] -> IO ()
 clone [tag] = clone [tag, tag]
 clone [tag, name] = do
     store <- readFile (".apters" </> "store")
-    ExitSuccess <- rawSystem "git" ["init", name]
+    ExitSuccess <- rawSystem "git" ["clone", store, name]
     let Just tag' = escapeTagName tag
-    (Nothing, Nothing, Nothing, h) <- createProcess (proc "git" ["pull", store, "tag", tag']) { cwd = Just name }
+    (Nothing, Nothing, Nothing, h) <- createProcess (proc "git" ["checkout", tag', "--"]) { cwd = Just name }
     ExitSuccess <- waitForProcess h
     return ()
 clone _ = putStrLn "Usage: apters clone <store tag> [<directory>]"
 
 commit :: [String] -> IO ()
-commit [tag] = do
-    store <- readFile (".." </> ".apters" </> "store")
-    True <- nameTag tag =<< indexTag
-    let Just tag' = escapeTagName tag
-    ExitSuccess <- rawSystem "git" ["push", store, "tag", tag']
+commit [] = do
+    (ExitSuccess, out, "") <- readProcessWithExitCode "git" ["rev-parse", "--verify", "HEAD^{commit}"] ""
+    let [tag] = lines out
     child <- liftM takeFileName getCurrentDirectory
-    setCurrentDirectory ".."
-    links <- liftM readLinks $ readFileOrEmpty $ ".apters" </> "links"
+    links <- liftM readLinks $ readFileOrEmpty $ ".." </> ".apters" </> "links"
     forM_ [(parent, dep) | (parent, dep, child') <- links, child == child'] $ \ (parent, dep) -> do
-        interactFile (parent </> "apters.deps") $ \ deps ->
-            showDeps $ (dep, tag) : [p | p@(dep', _) <- getDeps deps, dep /= dep']
-commit _ = putStrLn "Usage: apters commit <store tag>"
+        interactFile (".." </> parent </> "apters.deps") $ \ deps ->
+            showDeps $ (dep, "git/" ++ tag) : [p | p@(dep', _) <- getDeps deps, dep /= dep]
+commit _ = putStrLn "Usage: apters commit"
 
 expand :: [String] -> IO ()
 expand [parent, depname, child] = do

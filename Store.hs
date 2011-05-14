@@ -159,11 +159,15 @@ putCachedBuild key (StoreTag tag) = do
     when (code /= ExitSuccess) $ putStrLn $ "apters: warning: failed to cache build " ++ ident
 
 escapeTagName :: String -> Maybe String
-escapeTagName name = do
-    guard $ length name <= 64
-    let isCharOK c = isAlphaNum c || c `elem` ".+-:~_"
-    guard $ all isCharOK name
-    return $ "store-" ++ escapeURIString (`notElem` ".:~") name
+escapeTagName name = case stripPrefix "git/" name of
+    Just hash -> do
+        guard $ length hash == 40 && all isHexDigit hash
+        return hash
+    Nothing -> do
+        guard $ length name <= 64
+        let isCharOK c = isAlphaNum c || c `elem` ".+-:~_"
+        guard $ all isCharOK name
+        return $ "store-" ++ escapeURIString (`notElem` ".:~") name
 
 resolveTag :: String -> Maybe StoreTag
 resolveTag name = do
