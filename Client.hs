@@ -27,7 +27,7 @@ clone [tag, name] = do
     store <- readFile (".apters" </> "store")
     ExitSuccess <- rawSystem "git" ["clone", store, name]
     let Just tag' = escapeTagName tag
-    (Nothing, Nothing, Nothing, h) <- createProcess (proc "git" ["checkout", tag', "--"]) { cwd = Just name }
+    (Nothing, Nothing, Nothing, h) <- createProcess (proc "git" ["-c", "advice.detachedHead=false", "checkout", tag', "--"]) { cwd = Just name }
     ExitSuccess <- waitForProcess h
     return ()
 clone _ = putStrLn "Usage: apters clone <store tag> [<directory>]"
