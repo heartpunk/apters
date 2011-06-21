@@ -130,8 +130,6 @@ evalTree store (Build tree cmd) = do
 evalTag :: String -> String -> IO ()
 evalTag store name = do
     Just tag <- return $ resolveTag store name
-    let plan = doImport store (DepV tag)
-    print plan
-    case plan of
+    case doImport store (DepV tag) of
         TreeV tree -> print =<< evalTree store tree
-        _ -> return ()
+        plan -> print plan
