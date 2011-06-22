@@ -16,15 +16,17 @@ import Plan
 import Store
 
 build :: [String] -> IO ()
-build [tag, file] = do
-    store <- readFile (".apters" </> "store")
-    maybeResult <- evalTag store tag
+build [file] = do
+    store <- readFile (".." </> ".apters" </> "store")
+    (ExitSuccess, out, "") <- readProcessWithExitCode "git" ["rev-parse", "--verify", "HEAD^{tree}"] ""
+    let [tag] = lines out
+    maybeResult <- evalTag store ("git/" ++ tag)
     case maybeResult of
         Just result -> do
             print result
             exportTag store result file
         Nothing -> putStrLn "Recipe didn't evaluate to a tree; can't export it."
-build _ = putStrLn "Usage: apters build <store tag> <output file>"
+build _ = putStrLn "Usage: apters build <output file>"
 
 clone :: [String] -> IO ()
 clone [tag] = clone [tag, tag]
