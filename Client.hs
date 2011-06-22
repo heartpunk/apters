@@ -16,10 +16,15 @@ import Plan
 import Store
 
 build :: [String] -> IO ()
-build [tag] = do
+build [tag, file] = do
     store <- readFile (".apters" </> "store")
-    evalTag store tag
-build _ = putStrLn "Usage: apters build <store tag>"
+    maybeResult <- evalTag store tag
+    case maybeResult of
+        Just result -> do
+            print result
+            exportTag store result file
+        Nothing -> putStrLn "Recipe didn't evaluate to a tree; can't export it."
+build _ = putStrLn "Usage: apters build <store tag> <output file>"
 
 clone :: [String] -> IO ()
 clone [tag] = clone [tag, tag]

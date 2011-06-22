@@ -127,9 +127,13 @@ evalTree store (Build tree cmd) = do
         Just tag' ->
             return tag'
 
-evalTag :: String -> String -> IO ()
+evalTag :: String -> String -> IO (Maybe StoreTag)
 evalTag store name = do
     Just tag <- return $ resolveTag store name
     case doImport store (DepV tag) of
-        TreeV tree -> print =<< evalTree store tree
-        plan -> print plan
+        TreeV tree -> do
+            result <- evalTree store tree
+            return $ Just result
+        plan -> do
+            print plan
+            return Nothing

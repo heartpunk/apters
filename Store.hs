@@ -11,6 +11,7 @@ module Store (
     resolveTag,
     nameTag,
     StoreFile(..), importTag,
+    exportTag,
     StoreTag()
 ) where
 
@@ -230,6 +231,11 @@ importTag store = joinIM $ do
             hPutStr stdin "\n"
         Symlink target -> hPutStr stdin $ "M 120000 inline " ++ path ++ "\ndata " ++ show (length target) ++ "\n" ++ target ++ "\n"
         Hardlink target -> hPutStr stdin $ "C " ++ cleanPath target ++ " " ++ path ++ "\n"
+
+exportTag :: String -> StoreTag -> FilePath -> IO ()
+exportTag store (StoreTag tag) file = do
+    ExitSuccess <- rawSystem "git" ["--git-dir", store, "archive", "-o", file, tag]
+    return ()
 
 -- Internal helpers:
 
