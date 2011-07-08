@@ -1,0 +1,17 @@
+Apters is written in Haskell, and packaged using the standard installer
+for Haskell programs, called Cabal (http://www.haskell.org/cabal/).
+Cabal and the Glasgow Haskell Compiler are included in the Haskell
+Platform (http://hackage.haskell.org/platform/), and are also widely
+available in Linux distributions. For example, if you're using Debian,
+you can install the cabal-install and ghc (or ghc6, for older versions)
+packages.
+
+Once you have Cabal and GHC, you can compile and install Apters and its
+dependencies by running
+	cabal install
+from the top level of this source tree. By default, Cabal will install
+Apters in ~/.cabal/bin/.
+
+For more details, including the manual process you can follow if you
+don't want to use Cabal, see:
+<http://haskell.org/haskellwiki/Cabal/How_to_install_a_Cabal_package>
