@@ -35,7 +35,9 @@ clone [tag, name] = do
     (branch, repos) <- case escapeTagName tag of
         Just tag' -> do
             possibleRepos <- getDirectoryContents reposDir
-            return (tag', [repo | (repo, ".git") <- map splitExtension possibleRepos])
+            let containsCommit repo = fmap (== ExitSuccess) $ rawSystem "git" ["--git-dir", reposDir </> repo ++ ".git", "rev-parse", "--quiet", "--no-revs", "--verify", tag' ++ "^{commit}"]
+            repos <- filterM containsCommit [repo | (repo, ".git") <- map splitExtension possibleRepos]
+            return (tag', repos)
         Nothing -> return (tag ++ "/HEAD", [tag])
     ExitSuccess <- rawSystem "git" ["init", name]
     forM_ repos $ \repo -> do
