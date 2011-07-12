@@ -32,21 +32,30 @@ clone :: [String] -> IO ()
 clone [tag] = clone [tag, tag]
 clone [tag, name] = do
     reposDir <- fmap (</> "repos") $ readFile (".apters" </> "store")
-    (branch, repos) <- case escapeTagName tag of
-        Just tag' -> do
+    case escapeTagName tag of
+        Just hash -> do
             possibleRepos <- getDirectoryContents reposDir
-            let containsCommit repo = fmap (== ExitSuccess) $ rawSystem "git" ["--git-dir", reposDir </> repo ++ ".git", "rev-parse", "--quiet", "--no-revs", "--verify", tag' ++ "^{commit}"]
+            let containsCommit repo = fmap (== ExitSuccess) $ rawSystem "git" ["--git-dir", reposDir </> repo ++ ".git", "rev-parse", "--quiet", "--no-revs", "--verify", hash ++ "^{commit}"]
             repos <- filterM containsCommit [repo | (repo, ".git") <- map splitExtension possibleRepos]
-            return (tag', repos)
-        Nothing -> return (tag ++ "/HEAD", [tag])
-    ExitSuccess <- rawSystem "git" ["init", name]
-    forM_ repos $ \repo -> do
-        ExitSuccess <- rawSystem "git" ["--git-dir", name </> ".git", "remote", "add", "-f", repo, reposDir </> repo]
-        ExitSuccess <- rawSystem "git" ["--git-dir", name </> ".git", "remote", "set-head", "-a", repo]
-        return ()
-    (Nothing, Nothing, Nothing, h) <- createProcess (proc "git" ["-c", "advice.detachedHead=false", "checkout", branch, "--"]) { cwd = Just name }
-    ExitSuccess <- waitForProcess h
-    return ()
+            ExitSuccess <- rawSystem "git" ["init", name]
+            forM_ repos $ \repo -> do
+                ExitSuccess <- rawSystem "git" ["--git-dir", name </> ".git", "remote", "add", "-f", repo, reposDir </> repo]
+                return ()
+            (ExitSuccess, out, "") <- readProcessWithExitCode "git" ["--git-dir", name </> ".git", "for-each-ref", "refs/remotes/"] ""
+            let refs = [ref | [hash', "commit", refname] <- map words $ lines out, hash == hash', not $ "/HEAD" `isSuffixOf` refname, let Just ref = stripPrefix "refs/remotes/" refname]
+            let args = case refs of
+                    [ref] -> ["--track", ref]
+                    _ -> [hash]
+            (Nothing, Nothing, Nothing, h) <- createProcess (proc "git" (["checkout"] ++ args ++ ["--"])) { cwd = Just name }
+            ExitSuccess <- waitForProcess h
+            when (length refs > 1) $ do
+                putStrLn $ "\nThe commit you've requested matches the head of several branches:"
+                forM_ refs $ \ref -> putStrLn $ "  " ++ ref
+                putStrLn "You might want to \"git checkout --track $branch\" on one of those branches."
+            return ()
+        Nothing -> do
+            ExitSuccess <- rawSystem "git" ["clone", "--origin", name, reposDir </> name]
+            return ()
 clone _ = putStrLn "Usage: apters clone <store tag> [<directory>]"
 
 commit :: [String] -> IO ()
