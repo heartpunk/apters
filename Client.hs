@@ -17,7 +17,7 @@ import Store
 
 build :: [String] -> IO ()
 build [file] = do
-    store <- readFile (".." </> ".apters" </> "store")
+    store <- fmap (</> "cache.git") $ readFile (".." </> ".apters" </> "store")
     (ExitSuccess, out, "") <- readProcessWithExitCode "git" ["rev-parse", "--verify", "HEAD^{tree}"] ""
     let [tag] = lines out
     maybeResult <- evalTag store ("git/" ++ tag)
@@ -31,10 +31,18 @@ build _ = putStrLn "Usage: apters build <output file>"
 clone :: [String] -> IO ()
 clone [tag] = clone [tag, tag]
 clone [tag, name] = do
-    store <- readFile (".apters" </> "store")
-    ExitSuccess <- rawSystem "git" ["clone", store, name]
-    let Just tag' = escapeTagName tag
-    (Nothing, Nothing, Nothing, h) <- createProcess (proc "git" ["-c", "advice.detachedHead=false", "checkout", tag', "--"]) { cwd = Just name }
+    reposDir <- fmap (</> "repos") $ readFile (".apters" </> "store")
+    (branch, repos) <- case escapeTagName tag of
+        Just tag' -> do
+            possibleRepos <- getDirectoryContents reposDir
+            return (tag', [repo | (repo, ".git") <- map splitExtension possibleRepos])
+        Nothing -> return (tag ++ "/HEAD", [tag])
+    ExitSuccess <- rawSystem "git" ["init", name]
+    forM_ repos $ \repo -> do
+        ExitSuccess <- rawSystem "git" ["--git-dir", name </> ".git", "remote", "add", "-f", repo, reposDir </> repo]
+        ExitSuccess <- rawSystem "git" ["--git-dir", name </> ".git", "remote", "set-head", "-a", repo]
+        return ()
+    (Nothing, Nothing, Nothing, h) <- createProcess (proc "git" ["-c", "advice.detachedHead=false", "checkout", branch, "--"]) { cwd = Just name }
     ExitSuccess <- waitForProcess h
     return ()
 clone _ = putStrLn "Usage: apters clone <store tag> [<directory>]"
