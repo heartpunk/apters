@@ -78,6 +78,24 @@ expand [parent, depname, child] = do
         showLinks $ (parent, depname, child) : [l | l@(parent', depname', _) <- readLinks links, not $ parent == parent' && depname == depname']
 expand _ = putStrLn "Usage: apters expand <parent_dir> <dependency> <child_dir>"
 
+newrepo :: [String] -> IO ()
+newrepo [name] | '/' `notElem` name = do
+    store <- readFile (".apters" </> "store")
+    let path = "repos" </> name ++ ".git"
+    ExitSuccess <- rawSystem "git" ["init", "--bare", store </> path]
+    let alternates = store </> "cache.git" </> "objects" </> "info" </> "alternates"
+    let objects = ".." </> ".." </> path </> "objects"
+    interactFile alternates (unlines . (++ [objects]) . lines)
+    clone [name]
+newrepo _ = putStrLn "Usage: apters newrepo <name>"
+
+newstore :: [String] -> IO ()
+newstore [store] = do
+    createDirectoryIfMissing True (store </> "repos")
+    ExitSuccess <- rawSystem "git" ["init", "--bare", store </> "cache.git"]
+    return ()
+newstore _ = putStrLn "Usage: apters newstore <name>"
+
 workspace :: [String] -> IO ()
 workspace [url, dir] = do
     createDirectory dir
@@ -99,6 +117,8 @@ cmds = [("build", build),
         ("clone", clone),
         ("commit", commit),
         ("expand", expand),
+        ("newrepo", newrepo),
+        ("newstore", newstore),
         ("workspace", workspace),
         ("help", help)]
 
