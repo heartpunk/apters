@@ -10,7 +10,7 @@ module Store (
     escapeTagName,
     resolveTag,
     exportTag,
-    StoreTag()
+    StoreTag(), treeOf
 ) where
 
 import Directory
@@ -32,6 +32,9 @@ import System.Posix.User
 import System.Process
 
 newtype StoreTag = StoreTag String deriving Show
+
+treeOf :: StoreTag -> String
+treeOf (StoreTag tag) = tag
 
 readTagFile :: String -> StoreTag -> String -> String
 readTagFile store (StoreTag tag) path = unsafePerformIO $
@@ -163,8 +166,8 @@ resolveTag store name = do
     Right tag <- return $ unsafePerformIO $ resolveTag' store $ name' ++ "^{tree}"
     return tag
 
-exportTag :: String -> StoreTag -> E.Iteratee B.ByteString IO a -> IO a
-exportTag store (StoreTag tag) sink = do
+exportTag :: String -> String -> E.Iteratee B.ByteString IO a -> IO a
+exportTag store tag sink = do
     (Just input, Just output, Nothing, ph) <- createProcess (proc "git" ["--git-dir", store, "archive", "--format=tar", tag]) {
         std_in = CreatePipe,
         std_out = CreatePipe,
