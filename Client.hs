@@ -1,45 +1,48 @@
 module Main where
 
-import Control.Exception
 import Control.Monad
+import qualified Data.Enumerator.Binary as EB
 import Data.List
 import System.Directory
-import System.FilePath
 import System.Environment
 import System.Exit
-import System.IO.Error
+import System.FilePath
+import System.IO
 import System.Posix.Env
 import System.Process
 
 import DepsScanner
-import Plan
-import Store
+import Store (escapeTagName)
+import Store.Base
+import Store.File
+import Util
 
-build :: [String] -> IO ()
-build [file] = do
-    store <- fmap (</> "cache.git") $ readFile (".." </> ".apters" </> "store")
+getStore :: String -> IO Store
+getStore path = liftM fileStore $ readFile (path </> ".apters" </> "store")
+
+cmdBuild :: [String] -> IO ()
+cmdBuild [file] = do
+    store <- getStore ".."
     (ExitSuccess, out, "") <- readProcessWithExitCode "git" ["rev-parse", "--verify", "HEAD^{tree}"] ""
     let [tag] = lines out
-    maybeResult <- evalTag store ("git/" ++ tag)
+    maybeResult <- build store ("git/" ++ tag)
     case maybeResult of
         Just result -> do
             print result
-            exportTag store result file
+            withFile file WriteMode $ export store result . EB.iterHandle
         Nothing -> putStrLn "Recipe didn't evaluate to a tree; can't export it."
-build _ = putStrLn "Usage: apters build <output file>"
+cmdBuild _ = putStrLn "Usage: apters build <output file>"
 
-clone :: [String] -> IO ()
-clone [tag] = clone [tag, tag]
-clone [tag, name] = do
-    reposDir <- fmap (</> "repos") $ readFile (".apters" </> "store")
+cmdClone :: [String] -> IO ()
+cmdClone [tag] = cmdClone [tag, tag]
+cmdClone [tag, name] = do
+    store <- getStore "."
     case escapeTagName tag of
         Just hash -> do
-            possibleRepos <- getDirectoryContents reposDir
-            let containsCommit repo = fmap (== ExitSuccess) $ rawSystem "git" ["--git-dir", reposDir </> repo ++ ".git", "rev-parse", "--quiet", "--no-revs", "--verify", hash ++ "^{commit}"]
-            repos <- filterM containsCommit [repo | (repo, ".git") <- map splitExtension possibleRepos]
+            repos <- findRepos store tag
             ExitSuccess <- rawSystem "git" ["init", name]
-            forM_ repos $ \repo -> do
-                ExitSuccess <- rawSystem "git" ["--git-dir", name </> ".git", "remote", "add", "-f", repo, reposDir </> repo]
+            forM_ repos $ \(reponame, repo) -> do
+                ExitSuccess <- rawSystem "git" ["--git-dir", name </> ".git", "remote", "add", "-f", reponame, repo]
                 return ()
             (ExitSuccess, out, "") <- readProcessWithExitCode "git" ["--git-dir", name </> ".git", "for-each-ref", "refs/remotes/"] ""
             let refs = [ref | [hash', "commit", refname] <- map words $ lines out, hash == hash', not $ "/HEAD" `isSuffixOf` refname, let Just ref = stripPrefix "refs/remotes/" refname]
@@ -54,12 +57,16 @@ clone [tag, name] = do
                 putStrLn "You might want to \"git checkout --track $branch\" on one of those branches."
             return ()
         Nothing -> do
-            ExitSuccess <- rawSystem "git" ["clone", "--origin", name, reposDir </> name]
-            return ()
-clone _ = putStrLn "Usage: apters clone <store tag> [<directory>]"
+            maybeRepo <- getRepo store tag
+            case maybeRepo of
+                Just repo -> do
+                    ExitSuccess <- rawSystem "git" ["clone", "--origin", tag, repo, name]
+                    return ()
+                Nothing -> putStrLn $ "The store does not contain a repo named \"" ++ tag ++ "\"."
+cmdClone _ = putStrLn "Usage: apters clone <store tag> [<directory>]"
 
-commit :: [String] -> IO ()
-commit [] = do
+cmdCommit :: [String] -> IO ()
+cmdCommit [] = do
     (ExitSuccess, out, "") <- readProcessWithExitCode "git" ["rev-parse", "--verify", "HEAD^{commit}"] ""
     let [tag] = lines out
     child <- liftM takeFileName getCurrentDirectory
@@ -67,70 +74,56 @@ commit [] = do
     forM_ [(parent, dep) | (parent, dep, child') <- links, child == child'] $ \ (parent, dep) -> do
         interactFile (".." </> parent </> "apters.deps") $ \ deps ->
             showDeps $ (dep, "git/" ++ tag) : [p | p@(dep', _) <- getDeps deps, dep /= dep']
-commit _ = putStrLn "Usage: apters commit"
+cmdCommit _ = putStrLn "Usage: apters commit"
 
-expand :: [String] -> IO ()
-expand [parent, depname, child] = do
+cmdExpand :: [String] -> IO ()
+cmdExpand [parent, depname, child] = do
     depsStr <- readFile $ parent </> "apters.deps"
     let Just dep = lookup depname (getDeps depsStr)
-    clone [dep, child]
+    cmdClone [dep, child]
     interactFile (".apters" </> "links") $ \ links ->
         showLinks $ (parent, depname, child) : [l | l@(parent', depname', _) <- readLinks links, not $ parent == parent' && depname == depname']
-expand _ = putStrLn "Usage: apters expand <parent_dir> <dependency> <child_dir>"
+cmdExpand _ = putStrLn "Usage: apters expand <parent_dir> <dependency> <child_dir>"
 
-newrepo :: [String] -> IO ()
-newrepo [name] | '/' `notElem` name = do
-    store <- readFile (".apters" </> "store")
-    let path = "repos" </> name ++ ".git"
-    ExitSuccess <- rawSystem "git" ["init", "--bare", store </> path]
-    let alternates = store </> "cache.git" </> "objects" </> "info" </> "alternates"
-    let objects = ".." </> ".." </> path </> "objects"
-    interactFile alternates (unlines . (++ [objects]) . lines)
-    clone [name]
-newrepo _ = putStrLn "Usage: apters newrepo <name>"
+cmdNewrepo :: [String] -> IO ()
+cmdNewrepo [name] = do
+    store <- getStore "."
+    success <- newRepo store name
+    if success then cmdClone [name] else putStrLn "Could not create repository."
+cmdNewrepo _ = putStrLn "Usage: apters newrepo <name>"
 
-newstore :: [String] -> IO ()
-newstore [store] = do
+cmdNewstore :: [String] -> IO ()
+cmdNewstore [store] = do
     createDirectoryIfMissing True (store </> "repos")
     ExitSuccess <- rawSystem "git" ["init", "--bare", store </> "cache.git"]
     return ()
-newstore _ = putStrLn "Usage: apters newstore <name>"
+cmdNewstore _ = putStrLn "Usage: apters newstore <name>"
 
-workspace :: [String] -> IO ()
-workspace [url, dir] = do
+cmdWorkspace :: [String] -> IO ()
+cmdWorkspace [url, dir] = do
     createDirectory dir
     let aptersDir = dir </> ".apters"
     createDirectory aptersDir
     writeFile (aptersDir </> "store") url
-workspace _ = putStrLn "Usage: apters workspace <store url> <directory>"
+cmdWorkspace _ = putStrLn "Usage: apters workspace <store url> <directory>"
 
-help :: [String] -> IO ()
-help [] = do
+cmdHelp :: [String] -> IO ()
+cmdHelp [] = do
     putStrLn "Usage: apters <command> [<args>]\n\nApters commands:"
     mapM_ (putStrLn . fst) cmds
-help (cmd:_) = case lookup cmd cmds of
+cmdHelp (cmd:_) = case lookup cmd cmds of
     Just _ -> putStrLn $ "apters: no help on " ++ cmd ++ " for you!"
     Nothing -> putStrLn $ "apters: '" ++ cmd ++ "' is not an apters command. See 'apters help'."
 
 cmds :: [(String, [String] -> IO ())]
-cmds = [("build", build),
-        ("clone", clone),
-        ("commit", commit),
-        ("expand", expand),
-        ("newrepo", newrepo),
-        ("newstore", newstore),
-        ("workspace", workspace),
-        ("help", help)]
-
-readFileOrEmpty :: FilePath -> IO String
-readFileOrEmpty = handleJust (guard . isDoesNotExistError) (const $ return "") . readFile
-
-interactFile :: FilePath -> (String -> String) -> IO ()
-interactFile file f = do
-    let tmp = addExtension file "tmp"
-    old <- readFileOrEmpty file
-    writeFile tmp $ f old
-    renameFile tmp file
+cmds = [("build", cmdBuild),
+        ("clone", cmdClone),
+        ("commit", cmdCommit),
+        ("expand", cmdExpand),
+        ("newrepo", cmdNewrepo),
+        ("newstore", cmdNewstore),
+        ("workspace", cmdWorkspace),
+        ("help", cmdHelp)]
 
 showDeps :: [(String, String)] -> String
 showDeps deps = unlines [key ++ "=" ++ value | (key, value) <- sort deps ]
@@ -157,7 +150,7 @@ main :: IO ()
 main = do
     args <- getArgs
     case args of
-        [] -> help []
+        [] -> cmdHelp []
         cmd:cmdargs -> case lookup cmd cmds of
             Just f -> f cmdargs
-            Nothing -> help args
+            Nothing -> cmdHelp args

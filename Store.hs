@@ -24,6 +24,8 @@ import qualified Data.ByteString as B
 import Data.Char
 import Data.Int
 import Data.Iteratee (Iteratee, Stream(..), joinIM, liftI, idoneM, throwErr, mapChunksM_)
+import qualified Data.Enumerator as E
+import qualified Data.Enumerator.Binary as EB
 import Data.List
 import Network.URI (escapeURIString)
 import System.Directory
@@ -227,10 +229,17 @@ importTag store = joinIM $ do
         Symlink target -> hPutStr stdin $ "M 120000 inline " ++ path ++ "\ndata " ++ show (length target) ++ "\n" ++ target ++ "\n"
         Hardlink target -> hPutStr stdin $ "C " ++ cleanPath target ++ " " ++ path ++ "\n"
 
-exportTag :: String -> StoreTag -> FilePath -> IO ()
-exportTag store (StoreTag tag) file = do
-    ExitSuccess <- rawSystem "git" ["--git-dir", store, "archive", "-o", file, tag]
-    return ()
+exportTag :: String -> StoreTag -> E.Iteratee B.ByteString IO a -> IO a
+exportTag store (StoreTag tag) sink = do
+    (Just input, Just output, Nothing, ph) <- createProcess (proc "git" ["--git-dir", store, "archive", "--format=tar", tag]) {
+        std_in = CreatePipe,
+        std_out = CreatePipe,
+        close_fds = True
+    }
+    hClose input
+    result <- E.run_ $ EB.enumHandle 4096 output E.$$ sink
+    ExitSuccess <- waitForProcess ph
+    return result
 
 -- Internal helpers:
 

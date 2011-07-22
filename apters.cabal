@@ -16,6 +16,7 @@ Executable apters
     base < 5,
     bytestring,
     directory,
+    enumerator,
     filepath,
     network,
     process,
