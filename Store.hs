@@ -16,15 +16,12 @@ module Store (
 import Directory
 
 import Control.Concurrent
-import Control.Exception
 import Control.Monad
 import qualified Data.ByteString as B
 import Data.Char
-import Data.Int
 import qualified Data.Enumerator as E
 import qualified Data.Enumerator.Binary as EB
 import Data.List
-import Network.URI (escapeURIString)
 import System.Directory
 import System.Environment
 import System.Exit
@@ -49,12 +46,12 @@ mergeTags store tags = withTemporaryDirectory "/tmp/apters-index" $ \ tmpdir -> 
     -- b1f47514f207b0601de7b0936cf13b3c0ae70081, this function requires git
     -- version 1.7.2 or later.
     let readTree args = do
-            (Just null, Nothing, Nothing, p) <- createProcess (proc "git" ("read-tree" : args)) {
+            (Just input, Nothing, Nothing, p) <- createProcess (proc "git" ("read-tree" : args)) {
                 std_in = CreatePipe,
                 env = Just environ,
                 close_fds = True
             }
-            hClose null
+            hClose input
             ExitSuccess <- waitForProcess p
             return ()
     readTree [empty]
@@ -66,8 +63,8 @@ buildTag store (StoreTag root) cmd = withTemporaryDirectory "/tmp/apters-build" 
     let indexfile = tmpdir </> "index"
     let worktree = tmpdir </> "build"
     environ <- liftM ([("GIT_DIR", store), ("GIT_INDEX_FILE", indexfile), ("GIT_WORK_TREE", worktree)] ++) getEnvironment
-    let base cmd args = CreateProcess {
-            cmdspec = RawCommand cmd args,
+    let base arg0 args = CreateProcess {
+            cmdspec = RawCommand arg0 args,
             cwd = Nothing,
             env = Just environ,
             std_in = CreatePipe,
@@ -75,16 +72,16 @@ buildTag store (StoreTag root) cmd = withTemporaryDirectory "/tmp/apters-build" 
             std_err = CreatePipe,
             close_fds = True
         }
-    let expectSilence cmd args = do
-        (Just i, Just o, Just e, p) <- createProcess $ base cmd args
+    let expectSilence arg0 args = do
+        (Just i, Just o, Just e, p) <- createProcess $ base arg0 args
         hClose i
         o' <- hGetContents o
         e' <- hGetContents e
-        all <- mergeIO o' e'
+        allOutput <- mergeIO o' e'
         ex <- waitForProcess p
-        case (all, ex) of
+        case (allOutput, ex) of
             ("", ExitSuccess) -> return ()
-            _ -> fail $ "running " ++ intercalate " " (cmd : args) ++ ": " ++ show ex ++ ": " ++ all
+            _ -> fail $ "running " ++ intercalate " " (arg0 : args) ++ ": " ++ show ex ++ ": " ++ allOutput
 
     createDirectory worktree
     expectSilence "git" ["read-tree", root]
@@ -149,8 +146,8 @@ getCachedBuild store key = liftM (either (const Nothing) Just) $ resolveTag' sto
 putCachedBuild :: CacheKey k => String -> k -> StoreTag -> IO ()
 putCachedBuild store key (StoreTag tag) = do
     let ident = cacheKeyIdent key
-    (Just null, Nothing, Nothing, p) <- createProcess (proc "git" ["--git-dir", store, "tag", "-a", "-m", "", "cache-" ++ ident, tag]) { std_in = CreatePipe }
-    hClose null
+    (Just input, Nothing, Nothing, p) <- createProcess (proc "git" ["--git-dir", store, "tag", "-a", "-m", "", "cache-" ++ ident, tag]) { std_in = CreatePipe }
+    hClose input
     code <- waitForProcess p
     when (code /= ExitSuccess) $ putStrLn $ "apters: warning: failed to cache build " ++ ident
 
@@ -184,8 +181,8 @@ resolveTag' :: String -> String -> IO (Either String StoreTag)
 resolveTag' store tag = storeTag "git" ["--git-dir", store, "rev-parse", "--verify", tag] ""
 
 storeTag :: String -> [String] -> String -> IO (Either String StoreTag)
-storeTag cmd args stdin = do
-    status <- run cmd args stdin
+storeTag cmd args input = do
+    status <- run cmd args input
     case status of
         Left err -> return $ Left err
         Right s -> case lines s of
@@ -200,8 +197,8 @@ cause what act = do
         Left why -> fail $ what ++ ": " ++ why
 
 run :: String -> [String] -> String -> IO (Either String String)
-run cmd args stdin = do
-    (code, out, err) <- readProcessWithExitCode cmd args stdin
+run cmd args input = do
+    (code, out, err) <- readProcessWithExitCode cmd args input
     case (code, err) of
         (ExitSuccess, "") -> return $ Right out
         _ -> return $ Left err

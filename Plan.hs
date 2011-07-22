@@ -7,7 +7,6 @@ import Store
 import qualified Data.ByteString.Lazy.Char8 as C
 import Data.Digest.Pure.SHA
 import Data.List
-import System.Environment
 import System.FilePath.Posix
 
 -- The planning phase yields a Tree.
@@ -104,7 +103,7 @@ doImport :: String -> Value -> Value
 doImport store (DepV tag) = case mapM getDep $ getDeps $ readTagFile store tag "apters.deps" of
     Just deps -> doEval store tag deps "/default.apters"
     Nothing -> error $ "tag not found in apters.deps of " ++ show tag
-    where getDep (name, tagstr) = do tag <- resolveTag store tagstr; return (name, tag)
+    where getDep (name, tagstr) = do tag' <- resolveTag store tagstr; return (name, tag')
 doImport _ v = badValue "import" "dependency" v
 
 instance CacheKey C.ByteString where

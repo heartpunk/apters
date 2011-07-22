@@ -3,7 +3,6 @@ module Directory where
 import Control.Exception
 import Control.Monad
 import System.Directory
-import System.FilePath
 import System.IO.Error
 import System.Random
 

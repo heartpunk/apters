@@ -8,7 +8,6 @@ import System.Environment
 import System.Exit
 import System.FilePath
 import System.IO
-import System.Posix.Env
 import System.Process
 
 import DepsScanner
