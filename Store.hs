@@ -171,6 +171,7 @@ exportTag store (StoreTag tag) sink = do
         close_fds = True
     }
     hClose input
+    hSetBinaryMode output True
     result <- E.run_ $ EB.enumHandle 4096 output E.$$ sink
     ExitSuccess <- waitForProcess ph
     return result
