@@ -28,17 +28,3 @@ Executable apters
     Scanner
     DepsScanner
   Build-tools:         alex, happy > 1.18.4
-
-Library
-  Exposed-modules:
-    Codec.Archive.LibArchive
-    Codec.Archive.LibArchive.Internal
-    Codec.Archive.LibArchive.Internal.Entry
-  Extra-libraries:
-    archive
-  Build-depends:
-    base >= 4,
-    base < 5,
-    bytestring,
-    iteratee
-  Build-tools:         c2hs
