@@ -9,8 +9,6 @@ module Store (
     putCachedBuild,
     escapeTagName,
     resolveTag,
-    nameTag,
-    StoreFile(..), importTag,
     exportTag,
     StoreTag()
 ) where
@@ -23,7 +21,6 @@ import Control.Monad
 import qualified Data.ByteString as B
 import Data.Char
 import Data.Int
-import Data.Iteratee (Iteratee, Stream(..), joinIM, liftI, idoneM, throwErr, mapChunksM_)
 import qualified Data.Enumerator as E
 import qualified Data.Enumerator.Binary as EB
 import Data.List
@@ -169,66 +166,6 @@ resolveTag store name = do
     Right tag <- return $ unsafePerformIO $ resolveTag' store $ name' ++ "^{tree}"
     return tag
 
-nameTag :: String -> String -> StoreTag -> IO Bool
-nameTag store name (StoreTag tag) = case escapeTagName name of
-    Just name' -> do
-        environ <- getEnvironment
-        (Just null1, Just hashpipe, Nothing, p1) <- createProcess (proc "git" ["--git-dir", store, "commit-tree", tag]) { std_in = CreatePipe, std_out = CreatePipe, env = Just $ [
-            ("GIT_AUTHOR_NAME", "Apters"),
-            ("GIT_AUTHOR_EMAIL", "apters@example"),
-            ("GIT_AUTHOR_DATE", "1970-01-01 00:00:00 +0000"),
-            ("GIT_COMMITTER_NAME", "Apters"),
-            ("GIT_COMMITTER_EMAIL", "apters@example"),
-            ("GIT_COMMITTER_DATE", "1970-01-01 00:00:00 +0000")] ++ environ }
-        hClose null1
-        commit <- hGetLine hashpipe
-        hClose hashpipe
-        code1 <- waitForProcess p1
-        if code1 /= ExitSuccess then return False else do
-        (Just null2, Nothing, Nothing, p2) <- createProcess (proc "git" ["--git-dir", store, "tag", "-a", "-m", "", name', commit]) { std_in = CreatePipe }
-        hClose null2
-        code2 <- waitForProcess p2
-        return $ code2 == ExitSuccess
-    Nothing -> return False
-
-data StoreFile =
-    File { fileExecutable :: Bool, fileSize :: Int64, fileData :: Iteratee B.ByteString IO () -> IO () } |
-    Symlink { targetPath :: FilePath } |
-    Hardlink { targetPath :: FilePath }
-
-importTag :: String -> Iteratee (FilePath, StoreFile) IO StoreTag
-importTag store = joinIM $ do
-    let ref = "refs/import-tmp"
-    (Just stdin, Nothing, Nothing, p) <- createProcess (proc "git" ["--git-dir", store, "fast-import", "--quiet", "--date-format=raw"]) {
-        std_in = CreatePipe,
-        close_fds = True
-    }
-    hPutStr stdin $ unlines [
-            "commit " ++ ref,
-            "committer Apters <apters@example> 0 +0000",
-            "data 0"
-        ]
-    let cleanup maybeExc = do
-            hClose stdin
-            result <- waitForProcess p
-            tryTag <- resolveTag' store $ ref ++ "^{tree}"
-            Right _ <- run "git" ["--git-dir", store, "update-ref", "-d", ref] ""
-            case (maybeExc, result, tryTag) of
-                (Nothing, ExitSuccess, Right tag) -> return tag
-                (Just e, _, _) -> throw e
-                (_, ExitFailure _, _) -> fail $ "git fast-import: " ++ show result
-                (_, _, Left notag) -> fail $ "git fast-import: " ++ notag
-    let cleanPath rawpath = joinPath $ filter (\ d -> not (all (== '/') d || d == ".")) $ splitDirectories rawpath
-    return $ forI cleanup $ \ (rawpath, storefile) ->
-        let path = cleanPath rawpath
-        in case storefile of
-        File exec size contents -> do
-            hPutStr stdin $ "M " ++ (if exec then "100755" else "100644") ++ " inline " ++ path ++ "\ndata " ++ show size ++ "\n"
-            contents $ mapChunksM_ $ B.hPutStr stdin
-            hPutStr stdin "\n"
-        Symlink target -> hPutStr stdin $ "M 120000 inline " ++ path ++ "\ndata " ++ show (length target) ++ "\n" ++ target ++ "\n"
-        Hardlink target -> hPutStr stdin $ "C " ++ cleanPath target ++ " " ++ path ++ "\n"
-
 exportTag :: String -> StoreTag -> E.Iteratee B.ByteString IO a -> IO a
 exportTag store (StoreTag tag) sink = do
     (Just input, Just output, Nothing, ph) <- createProcess (proc "git" ["--git-dir", store, "archive", "--format=tar", tag]) {
@@ -242,22 +179,6 @@ exportTag store (StoreTag tag) sink = do
     return result
 
 -- Internal helpers:
-
-forI :: (Maybe SomeException -> IO a) -> (b -> IO ()) -> Iteratee b IO a
-forI end act = go
-    where
-    go = liftI $ \ s -> case s of
-        EOF e -> stop e
-        Chunk b -> joinIM $ do
-            result <- try $ act b
-            case result of
-                Left e -> return $ stop $ Just e
-                Right () -> return go
-    stop maybeExc = joinIM $ do
-        result <- try $ end maybeExc
-        case result of
-            Left e -> return $ throwErr e
-            Right a -> idoneM a $ EOF Nothing
 
 resolveTag' :: String -> String -> IO (Either String StoreTag)
 resolveTag' store tag = storeTag "git" ["--git-dir", store, "rev-parse", "--verify", tag] ""
