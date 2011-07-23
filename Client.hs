@@ -11,7 +11,6 @@ import System.IO
 import System.Process
 
 import DepsScanner
-import Store (escapeTagName)
 import Store.Base
 import Store.File
 import Store.Util
@@ -36,7 +35,7 @@ cmdClone :: [String] -> IO ()
 cmdClone [tag] = cmdClone [tag, tag]
 cmdClone [tag, name] = do
     store <- getStore "."
-    case escapeTagName tag of
+    case parseGitReference tag of
         Just hash -> do
             repos <- findRepos store tag
             ExitSuccess <- rawSystem "git" ["init", name]

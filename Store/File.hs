@@ -23,7 +23,7 @@ fileStore store = Store { .. }
     build tag = evalTag cache tag
     export result sink = exportTag cache result sink
 
-    findRepos name = case escapeTagName name of
+    findRepos name = case parseGitReference name of
         Just hash -> do
             possibleRepos <- getDirectoryContents reposDir
             let containsCommit repo = fmap (== ExitSuccess) $ rawSystem "git" ["--git-dir", reposDir </> repo ++ ".git", "rev-parse", "--quiet", "--no-revs", "--verify", hash ++ "^{commit}"]

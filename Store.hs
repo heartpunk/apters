@@ -7,13 +7,13 @@ module Store (
     CacheKey(..),
     getCachedBuild,
     putCachedBuild,
-    escapeTagName,
     resolveTag,
     exportTag,
     StoreTag(), treeOf
 ) where
 
 import Directory
+import Store.Base (parseGitReference)
 
 import Control.Concurrent
 import Control.Monad
@@ -154,15 +154,9 @@ putCachedBuild store key (StoreTag tag) = do
     code <- waitForProcess p
     when (code /= ExitSuccess) $ putStrLn $ "apters: warning: failed to cache build " ++ ident
 
-escapeTagName :: String -> Maybe String
-escapeTagName name = do
-    hash <- stripPrefix "git/" name
-    guard $ length hash == 40 && all isHexDigit hash
-    return hash
-
 resolveTag :: String -> String -> Maybe StoreTag
 resolveTag store name = do
-    name' <- escapeTagName name
+    name' <- parseGitReference name
     Right tag <- return $ unsafePerformIO $ resolveTag' store $ name' ++ "^{tree}"
     return tag
 
