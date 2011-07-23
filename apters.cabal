@@ -10,13 +10,16 @@ Cabal-version:       >=1.2
 
 Library
   Exposed-modules:
-    Store.Base
-    Store.Util
-    Store.File
-  Other-modules:
-    Language
-    Scanner
     DepsScanner
+    Store.Base
+    Store.File
+    Store.Util
+  Other-modules:
+    Directory
+    Language
+    Plan
+    Scanner
+    Store
   Build-depends:
     array,
     base >= 4,
