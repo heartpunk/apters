@@ -8,8 +8,15 @@ Category:            System
 Build-type:          Simple
 Cabal-version:       >=1.2
 
-Executable apters
-  Main-is:             Client.hs
+Library
+  Exposed-modules:
+    Store.Base
+    Store.Util
+    Store.File
+  Other-modules:
+    Language
+    Scanner
+    DepsScanner
   Build-depends:
     array,
     base >= 4,
@@ -23,8 +30,4 @@ Executable apters
     random,
     SHA,
     unix
-  Other-modules:
-    Language
-    Scanner
-    DepsScanner
   Build-tools:         alex, happy > 1.18.4
