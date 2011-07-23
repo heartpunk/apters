@@ -126,13 +126,14 @@ evalTree store (Build tree cmd) = do
         Just tag' ->
             return tag'
 
+asTree :: Value -> Maybe Tree
+asTree (TreeV tree) = Just tree
+asTree (DepV tree) = Just $ Fetch tree
+asTree _ = Nothing
+
 evalTag :: String -> String -> IO (Maybe String)
 evalTag store name = do
     Just tag <- return $ resolveTag store name
-    case doImport store (DepV tag) of
-        TreeV tree -> do
-            result <- evalTree store tree
-            return $ Just $ treeOf result
-        plan -> do
-            print plan
-            return Nothing
+    case asTree $ doImport store (DepV tag) of
+        Just tree -> fmap (Just . treeOf) $ evalTree store tree
+        _ -> return Nothing
