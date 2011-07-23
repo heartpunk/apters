@@ -21,7 +21,7 @@ fileStore store = Store { .. }
     validName name = '/' `notElem` name
 
     build tag = evalTag cache tag
-    export result sink = exportTag cache result sink
+    export result = exportTag cache result
 
     findRepos name = case parseGitReference name of
         Just hash -> do

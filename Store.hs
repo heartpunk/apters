@@ -160,17 +160,19 @@ resolveTag store name = do
     Right tag <- return $ unsafePerformIO $ resolveTag' store $ name' ++ "^{tree}"
     return tag
 
-exportTag :: String -> String -> E.Iteratee B.ByteString IO a -> IO a
-exportTag store tag sink = do
-    (Just input, Just output, Nothing, ph) <- createProcess (proc "git" ["--git-dir", store, "archive", "--format=tar", tag]) {
-        std_in = CreatePipe,
-        std_out = CreatePipe,
-        close_fds = True
-    }
-    hClose input
-    hSetBinaryMode output True
-    result <- E.run_ $ EB.enumHandle 4096 output E.$$ sink
-    ExitSuccess <- waitForProcess ph
+exportTag :: String -> String -> E.Enumerator B.ByteString IO a
+exportTag store tag step = do
+    (output, ph) <- E.tryIO $ do
+        (Just input, Just output, Nothing, ph) <- createProcess (proc "git" ["--git-dir", store, "archive", "--format=tar", tag]) {
+            std_in = CreatePipe,
+            std_out = CreatePipe,
+            close_fds = True
+        }
+        hClose input
+        hSetBinaryMode output True
+        return (output, ph)
+    result <- EB.enumHandle 4096 output step
+    ExitSuccess <- E.tryIO $ waitForProcess ph --TODO we should sanely check for success somehow.
     return result
 
 -- Internal helpers:
