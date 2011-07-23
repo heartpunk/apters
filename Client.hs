@@ -14,7 +14,7 @@ import DepsScanner
 import Store (escapeTagName)
 import Store.Base
 import Store.File
-import Util
+import Store.Util
 
 getStore :: String -> IO Store
 getStore path = liftM fileStore $ readFile (path </> ".apters" </> "store")

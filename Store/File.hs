@@ -10,7 +10,7 @@ import System.Process
 import Plan
 import Store
 import Store.Base
-import Util
+import Store.Util
 
 fileStore :: FilePath -> Store
 fileStore store = Store { .. }
